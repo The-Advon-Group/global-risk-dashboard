@@ -27,7 +27,7 @@ CANADA_FIXTURE = {
                "advisory-state": 3, "has-regional-advisory": 0,
                "date-published": {"date": "2026-09-01 09:10:12"},
                "eng": {"url-slug": "afghanistan", "advisory-text": "Avoid all travel"}},
-        "DZ": {"country-eng": "Algeria", "country-fra": "AlgÃ©rie",
+        "DZ": {"country-eng": "Algeria", "country-fra": "Algérie",
                "advisory-state": 1, "has-regional-advisory": 1,
                "date-published": {"date": "2026-09-01 09:05:38"},
                "eng": {"url-slug": "algeria",
@@ -36,25 +36,25 @@ CANADA_FIXTURE = {
                "advisory-state": 3, "date-published": {"date": "2026-05-08 00:00:00"},
                "eng": {"url-slug": "myanmar", "advisory-text": "Avoid all travel"}},
         "CD": {"country-eng": "Democratic Republic of Congo",
-               "country-fra": "RÃ©publique dÃ©mocratique du Congo",
+               "country-fra": "République démocratique du Congo",
                "advisory-state": 3, "date-published": {"date": "2026-07-15 00:00:00"},
                "eng": {"url-slug": "congo-kinshasa", "advisory-text": "Avoid all travel"}},
-        "CI": {"country-eng": "CÃ´te d'Ivoire", "country-fra": "CÃ´te d'Ivoire",
+        "CI": {"country-eng": "Côte d'Ivoire", "country-fra": "Côte d'Ivoire",
                "advisory-state": 1, "date-published": {"date": "2026-02-18 00:00:00"},
                "eng": {"url-slug": "cote-divoire", "advisory-text": "Exercise a high degree of caution"}},
         "GB": {"country-eng": "United Kingdom", "country-fra": "Royaume-Uni",
                "advisory-state": 0, "date-published": {"date": "2026-05-08 00:00:00"},
                "eng": {"url-slug": "united-kingdom", "advisory-text": "Exercise normal security precautions"}},
-        "NG": {"country-eng": "Nigeria", "country-fra": "NigÃ©ria",
+        "NG": {"country-eng": "Nigeria", "country-fra": "Nigéria",
                "advisory-state": 2, "has-regional-advisory": 1,
                "date-published": {"date": "2026-08-03 00:00:00"},
                "eng": {"url-slug": "nigeria", "advisory-text": "Avoid non-essential travel"}},
         "BQ": {"country-eng": "Caribbean Netherlands",
-               "country-fra": "Pays-Bas caribÃ©ens", "advisory-state": 0,
+               "country-fra": "Pays-Bas caribéens", "advisory-state": 0,
                "date-published": {"date": "2026-08-20 00:00:00"},
                "eng": {"url-slug": "caribbean-netherlands",
                        "advisory-text": "Exercise normal security precautions"}},
-        "VA": {"country-eng": "Vatican City", "country-fra": "CitÃ© du Vatican",
+        "VA": {"country-eng": "Vatican City", "country-fra": "Cité du Vatican",
                "advisory-state": 0, "date-published": {"date": "2026-05-23 00:00:00"},
                "eng": {"url-slug": "vatican", "advisory-text": "Exercise normal security precautions"}},
     },
@@ -97,7 +97,7 @@ US_ROW_HTML = """
 # The genuinely awkward names, exactly as each source spells them.
 AWKWARD = {
     "Burma (Myanmar)": "MM",
-    "CÃ´te d'Ivoire (Ivory-Coast)": "CI",
+    "Côte d'Ivoire (Ivory-Coast)": "CI",
     "Democratic Republic of the Congo (D.R.C.)": "CD",
     "United Kingdom of Great Britain and Northern Ireland": "GB",
     "The Gambia": "GM",
@@ -108,8 +108,8 @@ AWKWARD = {
     "Bonaire": "BQ",
     "Republic of North Macedonia": "MK",
     "Martinique (French West Indies)": "MQ",
-    "NigÃ©ria": "NG",        # French spelling, resolved via Canada's bilingual spine
-    "AlgÃ©rie": "DZ",
+    "Nigéria": "NG",        # French spelling, resolved via Canada's bilingual spine
+    "Algérie": "DZ",
     "Royaume-Uni": "GB",
 }
 
@@ -127,8 +127,8 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 
 def test_normalise() -> None:
     print("normalise()")
-    check("strips accents", normalise("CÃ´te d'Ivoire") == "cote divoire",
-          normalise("CÃ´te d'Ivoire"))
+    check("strips accents", normalise("Côte d'Ivoire") == "cote divoire",
+          normalise("Côte d'Ivoire"))
     check("drops parentheticals", normalise("Burma (Myanmar)") == "burma",
           normalise("Burma (Myanmar)"))
     check("drops leading 'the'", normalise("The Gambia") == "gambia")
