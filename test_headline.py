@@ -127,8 +127,25 @@ def test_unknown_capital() -> None:
     h = resolve([rec(1)], "ZZ", national_level=1)
     check("still returns a level", h.level == 1)
     check("flags the gap rather than failing",
-          any("capital unknown" in n for n in h.notes), str(h.notes))
-    check("no caveat invented", h.caveat is None)
+          any("no capital on file" in n for n in h.notes), str(h.notes))
+    check("uniform country needs no caveat", h.caveat is None)
+
+    # The bug the first live run caught: Western Sahara had no capital on file
+    # AND was not uniformly rated, and this branch returned without a caveat,
+    # which the validator correctly refused to publish.
+    spread = [rec(1), rec(4, region="named parts")]
+    h2 = resolve(spread, "ZZ", national_level=1)
+    check("a non-uniform country still gets a caveat without a capital",
+          bool(h2.caveat), str(h2.caveat))
+    check("the caveat names no city it cannot name",
+          h2.caveat and "country-wide figure" in h2.caveat, str(h2.caveat))
+    check("and still warns upward", h2.caveat and "up to level 4" in h2.caveat)
+
+    # Codes added after the live run diff.
+    for code, city in (("EH", "Laayoune"), ("XK", "Pristina"), ("CK", "Avarua"),
+                       ("YT", "Mamoudzou"), ("PM", "Saint-Pierre")):
+        check(f"{code} has a capital on file", capital_of(code) == city,
+              str(capital_of(code)))
 
 
 def test_apply_to_row() -> None:
