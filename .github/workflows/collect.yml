@@ -39,14 +39,34 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      # Every suite, not just the pipeline one. The mojibake that reached the
+      # repo on 10 Sep was caught by test_pipeline.py purely by luck of which
+      # file it lived in; a suite that does not run cannot catch anything.
       - name: Run offline tests
-        run: python test_pipeline.py
+        run: |
+          set -e
+          for f in test_*.py; do
+            echo "== $f"
+            python "$f"
+          done
 
       - name: Collect
         run: |
+          set -o pipefail
           python pipeline.py \
             --sources "${{ inputs.sources }}" \
-            ${{ inputs.dry_run && '--dry-run' || '' }}
+            ${{ inputs.dry_run && '--dry-run' || '' }} \
+            2>&1 | tee run-report.txt
+
+      # The log viewer virtualises long output and will not hand back the whole
+      # step, so the report also leaves as a file you can just open.
+      - name: Upload run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-report
+          path: run-report.txt
+          retention-days: 30
 
       - name: Commit snapshot
         if: ${{ !inputs.dry_run }}
