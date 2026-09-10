@@ -28,6 +28,7 @@ from collectors import canada, france, japan, uk, us
 from collectors.base import CollectorError, Record, get, utcnow
 from countries import SHARED_PAGE_NOTE, Spine, resolve_all, roll_up
 from headline import apply_to_row
+from report import format_report
 from validate import validate
 from western import apply_to_row as western_column
 
@@ -241,20 +242,36 @@ def main() -> int:
 
     report = validate(countries, status, unmapped, selected)
 
+    # Probed on every run, including dry runs, because it is the one thing that
+    # can change without anybody editing code: a route State currently refuses
+    # may start answering, and nobody would notice by hand.
+    probe = us.probe_us_routes() if "us" in selected else None
+
     snapshot = {
         "run_started": started,
         "run_finished": utcnow(),
         "sources_requested": selected,
         "source_status": status,
         "carry_forward": notices,
-        "state_api_probe": us.probe_cadataapi() if "us" in selected else None,
+        "state_api_probe": probe,
         "japan_status": japan.STATUS,
         "validation": report,
         "countries": countries,
     }
 
+    print()
+    print(
+        format_report(
+            report,
+            status,
+            spine_size=len(spine.by_iso),
+            probe=probe,
+            japan=japan.STATUS,
+        )
+    )
+
     if args.dry_run:
-        print(json.dumps(report, indent=2)[:4000])
+        print("DRY RUN - nothing written")
         return 0 if not report["blocking"] else 1
 
     stamp = datetime.now(timezone.utc)
@@ -267,10 +284,6 @@ def main() -> int:
     LATEST.write_text(json.dumps(snapshot, ensure_ascii=False, indent=1), encoding="utf-8")
 
     print(f"Snapshot: {path.relative_to(ROOT)}")
-    print(f"Countries: {len(countries)}   Unmapped names: {len(unmapped)}")
-    for line in report["summary"]:
-        print(f"  {line}")
-
     return 1 if report["blocking"] else 0
 
 
