@@ -140,6 +140,46 @@ def test_no_block() -> None:
     check("with empty wording rather than the label", z[0][2] == "", repr(z[0][2]))
 
 
+def test_page_shape_varies() -> None:
+    """Run #6 lost eighty French rows to pages shaped slightly differently.
+
+    Requiring the bands to sit inside a "Zones de vigilance" block looked right
+    against the two pages it was written from and was wrong against the rest:
+    some pages put another heading between the anchor and the bands, some carry
+    the anchor only as a figure caption, and some have no anchor at all.
+    """
+    print("Pages that are shaped differently still read")
+    cases = {
+        "bands one rank up, anchor one rank up": """<article><h2>Zones de vigilance</h2>
+            <div><h3>Zones formellement déconseillées</h3><p>le Nord</p>
+            <h3>Zones en vigilance normale</h3><p>le reste</p></div></article>""",
+        "a heading between the anchor and the bands": """<article><h3>Zones de vigilance</h3>
+            <h3>Carte</h3><div><h4>Zones en vigilance normale</h4><p>tout le pays</p></div></article>""",
+        "anchor only as a figure caption": """<article>
+            <figure><figcaption>Zones de vigilance</figcaption></figure>
+            <div><h4>Zones en vigilance normale</h4><p>tout</p></div></article>""",
+        "no anchor heading at all": """<article><div>
+            <h4>Zones formellement déconseillées</h4><p>le Nord</p></div></article>""",
+    }
+    for label, html in cases.items():
+        check(label, bool(zones(html)), "read nothing")
+
+    print("A band phrase in a heading below the block is still ignored")
+    z = zones("""<article><h3>Zones de vigilance</h3>
+        <div><h4>Zones en vigilance normale</h4><p>tout</p></div>
+        <h3>Risques encourus et recommandations associées</h3>
+        <div><h4>Zones portuaires formellement déconseillées la nuit</h4>
+        <p>ne pas y aller</p></div></article>""")
+    check("only the real band is read", [level for level, _, _ in z] == [1], str(z))
+
+    print("A heading that mentions a band but is not a zone heading")
+    z2 = zones("""<article><h3>Zones de vigilance</h3><div>
+        <h4>Quelles zones sont formellement déconseillées ?</h4><p>explication</p>
+        <h4>Zones en vigilance normale</h4><p>tout</p></div></article>""")
+    check("a question heading is not read as a band",
+          [level for level, _, _ in z2] == [1], str(z2))
+
+
 def test_same_band_twice() -> None:
     print("A colour split across two headings")
     html = """<article><h3>Zones de vigilance</h3><div class="fr-prose">
@@ -154,7 +194,7 @@ def test_same_band_twice() -> None:
 if __name__ == "__main__":
     for fn in (test_seychelles, test_narrative_is_not_scanned,
                test_exception_clause_survives, test_heading_variants,
-               test_no_block, test_same_band_twice):
+               test_no_block, test_page_shape_varies, test_same_band_twice):
         fn()
     print()
     print("FAILURES:", FAILS)

@@ -174,6 +174,14 @@ MULTI_COUNTRY: dict[str, list[str]] = {
     # France publishes one page titled "Israel / Palestine" covering both, and
     # its zone bands run across the whole of it.
     "israel palestine": ["IL", "PS"],
+    # State's feed carries one advisory titled "Mainland China, Hong Kong &
+    # Macau" and separate items for the two territories. Hong Kong and Macau
+    # therefore hold two US records each, and the roll-up takes the higher -
+    # which is the combined advisory whenever State rates the mainland above the
+    # territory. That is deliberate rather than a merge bug: State is telling
+    # both things, and the detail view shows both records.
+    "mainland china hong kong and macau": ["CN", "HK", "MO"],
+    "mainland china": ["CN"],
 }
 
 # Names that are genuinely ambiguous and must NEVER be guessed. "Congo" is the

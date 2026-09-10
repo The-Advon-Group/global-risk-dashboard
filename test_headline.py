@@ -190,6 +190,36 @@ def test_source_states_no_national_level() -> None:
     check("falls back to the only level there is", h4.level == 3,
           f"got {h4.level} via {h4.basis}")
 
+    print("The source names the band covering the rest of the country")
+    # Algeria's shape. Taking the least severe band published Algiers at 1,
+    # which is lower than France means: France puts the remainder in the
+    # yellow band and says so.
+    algeria = [
+        rec(4, region="l'extreme sud du pays et les zones frontalieres"),
+        rec(3, region="le massif des Aures"),
+        rec(2, region="le reste du pays"),
+        rec(1, region="les stations balneaires de l'ouest"),
+    ]
+    h5 = resolve(algeria, "DZ", national_level=4, national_stated=False)
+    check("uses the band the source marked as the remainder, not the lowest",
+          h5.level == 2, f"got {h5.level} via {h5.basis}")
+    check("basis names the source's own wording",
+          "rest of the" in h5.basis, h5.basis)
+    check("caveat still warns upward", h5.caveat and "up to level 4" in h5.caveat,
+          str(h5.caveat))
+
+    print("English wording for the same thing")
+    en = [rec(4, region="the northern border area"),
+          rec(2, region="the rest of the country")]
+    h6 = resolve(en, "KE", national_level=4, national_stated=False)
+    check("'the rest of the country' is recognised", h6.level == 2,
+          f"got {h6.level} via {h6.basis}")
+
+    print("Two residual markers disagree")
+    two = [rec(1, region="le reste de la region"), rec(3, region="le reste du pays")]
+    h7 = resolve(two, "KE", national_level=3, national_stated=False)
+    check("the more cautious one wins", h7.level == 3, f"got {h7.level}")
+
 
 def test_apply_to_row() -> None:
     print("Applying to a reconciled row")

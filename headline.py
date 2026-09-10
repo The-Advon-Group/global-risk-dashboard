@@ -68,6 +68,19 @@ EXCEPTION = re.compile(
     re.I,
 )
 
+# A zone that describes itself as everywhere the other zones do not cover.
+# France writes "le reste du pays" and "le reste du territoire"; the FCDO writes
+# "the rest of the country". A capital named in no other zone is in this one,
+# which is better evidence than any inference about which band to fall back to.
+RESIDUAL = re.compile(
+    r"(?:le\s+)?reste\s+du\s+(?:pays|territoire)|"
+    r"reste\s+de\s+l[ae']|"
+    r"rest\s+of\s+the\s+(?:country|territory)|"
+    r"remainder\s+of\s+the\s+country|"
+    r"elsewhere\s+in\s+the\s+country",
+    re.I,
+)
+
 
 @dataclass
 class Headline:
@@ -134,6 +147,22 @@ def _capital_from_regions(
     if excluded:
         return (None, "", excepted_name, excluded)
     return None, "", None, []
+
+
+def _residual_level(records: list[dict]) -> int | None:
+    """The level of the zone the source says covers the rest of the country.
+
+    Where a source marks more than one - it happens when a page says "the rest
+    of the region" in one band and "the rest of the country" in another - the
+    more cautious of them wins, because the ambiguity is ours and should not
+    resolve in the reassuring direction.
+    """
+    hits = [
+        rec.get("level")
+        for rec in records
+        if isinstance(rec.get("level"), int) and RESIDUAL.search(str(rec.get("region") or ""))
+    ]
+    return max(hits) if hits else None
 
 
 def resolve(
@@ -211,19 +240,28 @@ def resolve(
         zone_levels = [
             r.get("level") for r in regional if isinstance(r.get("level"), int)
         ]
-        if regional and not national_stated and zone_levels:
-            # The source named zones and stated no country-wide level. The
-            # capital is in none of the zones it named, so it is not in the
-            # worst one. Publish the least severe band the source printed and
-            # let the caveat carry the spread.
+        residual = _residual_level(regional)
+        if regional and not national_stated and residual is not None:
+            # The source itself says which band covers everywhere the other
+            # zones do not. A capital named in no other zone is in that one,
+            # which is the source's own answer rather than our inference.
+            level = residual
+            basis = ("capital named in no zone; source's own 'rest of the "
+                     "country' band used")
+        elif regional and not national_stated and zone_levels:
+            # No residual band either. The capital is in none of the zones the
+            # source named, so it is not in the worst one. Publish the least
+            # severe band the source printed and let the caveat carry the
+            # spread. This is the weakest step in the chain and it says so.
             level = min(zone_levels)
             basis = (
-                "source states no country-wide level and no named zone covers "
-                "the capital; least severe band the source published used"
+                "source states no country-wide level, no named zone covers the "
+                "capital and none is marked as covering the rest; least severe "
+                "band the source published used"
             )
             extra_notes.append(
                 "capital not named in any zone - level inferred from the "
-                "source's least severe band"
+                "source's least severe band, which may understate"
             )
         else:
             level = national_level
