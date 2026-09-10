@@ -100,9 +100,36 @@ def test_indicator_letters_are_states() -> None:
           letters <= set(INDICATOR_NAMES), str(letters - set(INDICATOR_NAMES)))
 
 
+def test_title_suffixes() -> None:
+    """Suffixes State hangs off the destination name, from run #7."""
+    print("Title suffixes are not part of the country name")
+    from collectors.us import TRAILING_ADVISORY
+
+    def strip(name: str) -> str:
+        for _ in range(3):
+            out = TRAILING_ADVISORY.sub("", name).strip()
+            if out == name:
+                break
+            name = out
+        return name
+
+    check("'- See Summaries' removed",
+          strip("Mainland China, Hong Kong & Macau - See Summaries")
+          == "Mainland China, Hong Kong & Macau",
+          strip("Mainland China, Hong Kong & Macau - See Summaries"))
+    check("'Travel Advisory' removed",
+          strip("Mexico Travel Advisory") == "Mexico")
+    check("both removed together",
+          strip("Ruritania Travel Advisory - See Summaries") == "Ruritania",
+          strip("Ruritania Travel Advisory - See Summaries"))
+    check("a plain name is untouched", strip("Suriname") == "Suriname")
+    check("a country whose name ends in a real word is untouched",
+          strip("Trinidad and Tobago") == "Trinidad and Tobago")
+
+
 if __name__ == "__main__":
     for fn in (test_title_wordings, test_indicators_from_prose, test_plain_text,
-               test_indicator_letters_are_states):
+               test_indicator_letters_are_states, test_title_suffixes):
         fn()
     print()
     print("FAILURES:", FAILS)

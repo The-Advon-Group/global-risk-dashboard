@@ -141,6 +141,55 @@ ALIASES: dict[str, list[str]] = {
     "MV": ["Male Atoll"],
 }
 
+# French spellings, added 10 Sep 2026 after run #7.
+#
+# France names cities in French, and the table above is in English, so
+# `mentioned_in` could not find a single one of them. Algeria is the case that
+# made it obvious: France's green band says "Alger et Oran sont en zones de
+# vigilance normale" - it puts the capital in the safest band and names it -
+# and the matcher was looking for "Algiers". The row came out right only by
+# accident, because the lowest band happened to be the right answer.
+#
+# Only the names that actually differ are listed. Accents are irrelevant here
+# because matching runs on the de-accented form, but they are written as France
+# writes them so the table can be checked against the source by eye.
+FRENCH_CAPITALS: dict[str, list[str]] = {
+    "DZ": ["Alger"], "EG": ["Le Caire"], "GB": ["Londres"], "RU": ["Moscou"],
+    "CN": ["Pékin"], "IQ": ["Bagdad"], "SY": ["Damas"], "IR": ["Téhéran"],
+    "CU": ["La Havane"], "GR": ["Athènes"], "PL": ["Varsovie"], "AT": ["Vienne"],
+    "BE": ["Bruxelles"], "DK": ["Copenhague"], "PT": ["Lisbonne"],
+    "RO": ["Bucarest"], "CY": ["Nicosie"], "LB": ["Beyrouth"], "SA": ["Riyad"],
+    "OM": ["Mascate"], "KW": ["Koweït"], "AE": ["Abou Dabi"],
+    "GE": ["Tbilissi"], "AM": ["Erevan"], "AZ": ["Bakou"], "TM": ["Achgabat"],
+    "UZ": ["Tachkent"], "TJ": ["Douchanbé"], "KG": ["Bichkek"], "AF": ["Kaboul"],
+    "NP": ["Katmandou"], "BD": ["Dacca"], "MM": ["Rangoun"], "VN": ["Hanoï"],
+    "KR": ["Séoul"], "PH": ["Manille"], "SG": ["Singapour"],
+    "ET": ["Addis-Abeba"], "SO": ["Mogadiscio"], "TZ": ["Dar es Salam"],
+    "ZA": ["Le Cap"], "MX": ["Mexico"], "DO": ["Saint-Domingue"],
+    "PA": ["Panama"], "GT": ["Guatemala"], "MA": ["Rabat", "Marrakech"],
+    "TR": ["Istanbul", "Ankara"], "IL": ["Jérusalem"], "PS": ["Gaza"],
+    "CH": ["Berne"], "IT": ["Rome"], "ES": ["Madrid"], "DE": ["Berlin"],
+    "NL": ["La Haye", "Amsterdam"], "SE": ["Stockholm"], "NO": ["Oslo"],
+    "IE": ["Dublin"], "IS": ["Reykjavik"], "FI": ["Helsinki"],
+    "UA": ["Kiev", "Kyiv"], "BY": ["Minsk"], "MD": ["Chisinau"],
+    "RS": ["Belgrade"], "AL": ["Tirana"], "MK": ["Skopje"],
+    "LY": ["Tripoli"], "TN": ["Tunis"], "MR": ["Nouakchott"],
+    "CM": ["Yaoundé"], "CI": ["Abidjan"], "CD": ["Kinshasa"],
+    "MG": ["Antananarivo"], "KM": ["Moroni"], "LK": ["Colombo"],
+    "TH": ["Bangkok"], "KH": ["Phnom Penh"], "LA": ["Vientiane"],
+    "ID": ["Jakarta"], "MY": ["Kuala Lumpur"], "IN": ["New Delhi"],
+    "PK": ["Islamabad"], "JP": ["Tokyo"], "BR": ["Brasilia"],
+    "AR": ["Buenos Aires"], "CO": ["Bogota"], "VE": ["Caracas"],
+    "PE": ["Lima"], "CL": ["Santiago"], "BO": ["La Paz"],
+    "HT": ["Port-au-Prince"], "JM": ["Kingston"], "NG": ["Abuja", "Lagos"],
+}
+
+for _code, _names in FRENCH_CAPITALS.items():
+    ALIASES.setdefault(_code, [])
+    for _name in _names:
+        if _name not in ALIASES[_code]:
+            ALIASES[_code].append(_name)
+
 
 def _flat(text: str) -> str:
     text = unicodedata.normalize("NFKD", text or "")

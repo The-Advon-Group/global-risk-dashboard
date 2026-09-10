@@ -155,6 +155,11 @@ ALIASES: dict[str, str] = {
     "saint siege": "VA",
     "etats federes de micronesie": "FM",
     "micronesie": "FM",
+    # --- State's feed wordings, from run #7's unmapped list, 10 Sep 2026 ---
+    "cote d ivoire": "CI",       # the apostrophe is stripped before lookup
+    "curacao": "CW",
+    "gaza": "PS",
+    "kingdom of denmark": "DK",  # State's title; Greenland has its own item
 }
 
 # Some sources publish ONE page covering SEVERAL countries. The FCDO does this
@@ -182,6 +187,8 @@ MULTI_COUNTRY: dict[str, list[str]] = {
     # both things, and the detail view shows both records.
     "mainland china hong kong and macau": ["CN", "HK", "MO"],
     "mainland china": ["CN"],
+    # State issues one advisory for the four French Antilles collectivities.
+    "french west indies": ["GP", "MQ", "BL", "MF"],
 }
 
 # Names that are genuinely ambiguous and must NEVER be guessed. "Congo" is the
