@@ -295,7 +295,15 @@ def main() -> int:
     )
 
     if args.dry_run:
-        print("DRY RUN - nothing written")
+        # The snapshot is still built, so write it beside the run rather than
+        # throwing it away. It is NOT in `data/` or `snapshots/`, so the commit
+        # step never sees it; the workflow uploads it as a run artifact instead.
+        # That gives the page something real to be built against without
+        # publishing anything.
+        out = ROOT / "run-snapshot.json"
+        out.write_text(json.dumps(snapshot, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"DRY RUN - nothing committed; snapshot written to {out.name} "
+              f"({out.stat().st_size // 1024} KB)")
         return 0 if not report["blocking"] else 1
 
     stamp = datetime.now(timezone.utc)

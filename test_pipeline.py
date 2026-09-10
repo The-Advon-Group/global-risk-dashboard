@@ -365,12 +365,55 @@ def test_france_slugs() -> None:
     check("no leading or trailing hyphens", not slugify("  Îles Marshall  ").strip("-") != slugify("  Îles Marshall  "))
 
 
+def test_provisional_count() -> None:
+    """A placeholder level must be counted, not shown as a reading.
+
+    The FCDO issues an advise-against alert for a minority of countries. For the
+    rest `collectors/uk.py` fills the gap with a provisional level 1 pending the
+    phrase ladder. On the page that cell looks exactly like a confident level 1.
+    """
+    print("Provisional levels are counted separately")
+    from validate import _is_provisional
+
+    placeholder = {"records": [{
+        "level_basis": "no FCDO advise-against alert; terrorism-language tier "
+                       "not yet applied",
+        "notes": ["provisional level 1 - refine to 1 vs 2 once phrase ladder lands"],
+    }]}
+    real = {"records": [{"level_basis": "FCDO alert_status, whole country", "notes": []}]}
+    check("a placeholder is recognised", _is_provisional(placeholder) is True)
+    check("a real reading is not", _is_provisional(real) is False)
+    check("an empty bucket is not", _is_provisional({}) is False)
+    check("a bucket with no records is not", _is_provisional({"records": []}) is False)
+
+    countries = {
+        "AA": {"iso2": "AA", "name": "A", "sources": {"uk": dict(placeholder)}},
+        "BB": {"iso2": "BB", "name": "B", "sources": {"uk": dict(placeholder)}},
+        "CC": {"iso2": "CC", "name": "C", "sources": {"uk": dict(real)}},
+    }
+    report = validate(countries, {"uk": {"ok": True}}, [], ["uk"])
+    check("counted per source", report["provisional"] == {"uk": 2},
+          str(report.get("provisional")))
+    check("and stated in the summary",
+          any("2 provisional" in line for line in report["summary"]),
+          str(report["summary"]))
+    check("the share of the column is given",
+          any("67%" in line for line in report["summary"]), str(report["summary"]))
+
+    clean = {"AA": {"iso2": "AA", "name": "A", "sources": {"uk": dict(real)}}}
+    quiet = validate(clean, {"uk": {"ok": True}}, [], ["uk"])
+    check("a column with no placeholders says nothing about them",
+          all("provisional" not in line for line in quiet["summary"]),
+          str(quiet["summary"]))
+
+
 if __name__ == "__main__":
     for fn in (test_normalise, test_canada_levels, test_us_parser,
                test_reconciliation, test_rollup, test_validation, test_record_shape,
                test_live_run_gaps, test_french_country_names,
                test_multi_country_pages,
-               test_ambiguous_never_guessed, test_france_slugs):
+               test_ambiguous_never_guessed, test_france_slugs,
+               test_provisional_count):
         fn()
     print()
     print("FAILURES:", FAILS)

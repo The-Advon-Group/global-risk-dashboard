@@ -27,6 +27,29 @@ REQUIRED_FIELDS = ("iso2", "name")
 REQUIRED_SOURCE_FIELDS = ("url", "retrieved_at")
 
 
+def _is_provisional(bucket: dict) -> bool:
+    """Is this cell a real reading, or a placeholder standing in for one?
+
+    The FCDO issues an advise-against alert for a minority of countries. For the
+    rest it says nothing we can grade, and `collectors/uk.py` fills the gap with
+    a provisional level 1 pending the Phase 2 phrase ladder, which is what
+    separates "nothing to flag here" from "be careful here". A cell like that
+    looks identical to a confident level 1 on the page, and it is not one.
+
+    Counting them is the point: a column that is mostly placeholder is a
+    different product from one that is mostly readings, and nobody should have
+    to guess which we have.
+    """
+    for record in bucket.get("records") or []:
+        haystack = " ".join(
+            [str(record.get("level_basis") or "")] +
+            [str(note) for note in (record.get("notes") or [])]
+        ).lower()
+        if "provisional" in haystack or "not yet applied" in haystack:
+            return True
+    return False
+
+
 def validate(
     countries: dict,
     status: dict,
@@ -67,6 +90,7 @@ def validate(
     missing_url = 0
     unrated_cells = Counter()
     coverage = Counter()
+    provisional = Counter()
 
     for iso2, row in countries.items():
         for field in REQUIRED_FIELDS:
@@ -88,6 +112,8 @@ def validate(
             coverage[source] += 1
             if bucket.get("level") is None:
                 unrated_cells[source] += 1
+            if _is_provisional(bucket):
+                provisional[source] += 1
             for field in REQUIRED_SOURCE_FIELDS:
                 if not bucket.get(field):
                     missing_url += 1
@@ -180,9 +206,15 @@ def validate(
     for source in selected:
         got = coverage.get(source, 0)
         pct = (got / total * 100) if total else 0
-        summary.append(
-            f"{source}: {got}/{total} rows ({pct:.0f}%), {unrated_cells.get(source, 0)} unrated"
+        line = (
+            f"{source}: {got}/{total} rows ({pct:.0f}%), "
+            f"{unrated_cells.get(source, 0)} unrated"
         )
+        holding = provisional.get(source, 0)
+        if holding:
+            share = (holding / got * 100) if got else 0
+            line += f", {holding} provisional ({share:.0f}% of the column)"
+        summary.append(line)
     if failed:
         summary.append(f"failed sources: {', '.join(failed)}")
     if unmapped:
@@ -195,6 +227,7 @@ def validate(
         "warnings": [f for f in findings if f["level"] == "warning"],
         "coverage": dict(coverage),
         "unrated": dict(unrated_cells),
+        "provisional": dict(provisional),
         "unmapped_names": unmapped,
         "divergent": divergent[:50],
         "sources_working": working,
