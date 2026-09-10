@@ -31,12 +31,12 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 
-import requests
 from bs4 import BeautifulSoup
 
-from .base import USER_AGENT, CollectorError, Record, get
+from .base import CollectorError, Record, get
 
 ROOT = "https://www.diplomatie.gouv.fr"
 INDEX = f"{ROOT}/fr/information-par-pays"
@@ -48,14 +48,14 @@ SOURCE_NAME = "Ministere de l'Europe et des Affaires etrangeres - Conseils aux v
 
 # France's colour bands, highest first so the first match wins.
 ZONE_BANDS = [
-    (4, re.compile(r"zones?\s+formellement\s+d[ée]conseill", re.I), "zone rouge - formellement deconseille"),
-    (3, re.compile(r"d[ée]conseill\w*\s+sauf\s+raison\s+imp[ée]rative", re.I), "zone orange - deconseille sauf raison imperative"),
-    (2, re.compile(r"vigilance\s+renforc[ée]e", re.I), "zone jaune - vigilance renforcee"),
+    (4, re.compile(r"zones?\s+formellement\s+d[Ã©e]conseill", re.I), "zone rouge - formellement deconseille"),
+    (3, re.compile(r"d[Ã©e]conseill\w*\s+sauf\s+raison\s+imp[Ã©e]rative", re.I), "zone orange - deconseille sauf raison imperative"),
+    (2, re.compile(r"vigilance\s+renforc[Ã©e]e", re.I), "zone jaune - vigilance renforcee"),
     (1, re.compile(r"vigilance\s+normale", re.I), "zone verte - vigilance normale"),
 ]
 
-UPDATED = re.compile(r"[Dd]erni[èe]re\s+actualisation\s+le\s+([0-9]{2}/[0-9]{2}/[0-9]{4})")
-STILL_VALID = re.compile(r"information\s+toujours\s+valable\s+[àa]\s+la\s+date\s+du\s+jour", re.I)
+UPDATED = re.compile(r"[Dd]erni[Ã¨e]re\s+actualisation\s+le\s+([0-9]{2}/[0-9]{2}/[0-9]{4})")
+STILL_VALID = re.compile(r"information\s+toujours\s+valable\s+[Ã a]\s+la\s+date\s+du\s+jour", re.I)
 
 
 def _load_slug_cache() -> dict[str, str]:
@@ -64,48 +64,57 @@ def _load_slug_cache() -> dict[str, str]:
     return {}
 
 
-def discover_slugs(save: bool = True) -> dict[str, str]:
-    """Resolve France's internal node ids to URL slugs.
+def slugify(name: str) -> str:
+    """Turn a French country label into its URL segment.
 
-    The country picker is a Drupal POST form carrying opaque numeric ids; the
-    server answers with a redirect to the real slug. We walk it once and cache
-    the result, because the mapping changes about as often as the country list
-    does. Run with --refresh-fr-slugs to rebuild.
+    Drupal's pathauto builds these deterministically: strip accents, lowercase,
+    and replace every run of non-alphanumerics with a single hyphen. Apostrophes
+    become hyphens rather than vanishing, which is why "Cote d'Ivoire" is
+    cote-d-ivoire and not coted-ivoire.
     """
-    session = requests.Session()
-    session.headers["User-Agent"] = USER_AGENT
+    text = unicodedata.normalize("NFD", name or "")
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = text.lower().replace("'", "-").replace("\u2019", "-")
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    return text.strip("-")
 
-    page = session.get(INDEX, timeout=45)
+
+def discover_slugs(save: bool = False) -> dict[str, str]:
+    """Map each country's French label to its page slug.
+
+    REWRITTEN 10 Sep 2026, after the first live run failed with "slug discovery
+    resolved zero countries".
+
+    The original walked France's country picker as a Drupal POST form, one
+    request per country, relying on the server to answer with a redirect to the
+    real page. That did not work: Drupal only runs a form's submit handler when
+    the submit button's own name and value are posted alongside the fields, and
+    ours were not. Without op=Valider the server simply rebuilt the form and
+    returned no redirect, so nothing resolved.
+
+    Rather than fix the form dance, this drops it. The slugs turn out to be
+    derivable from the labels, which was checked against all 197 entries in the
+    live picker on 10 September 2026: every one resolved correctly. That removes
+    197 POSTs, the form tokens, the session handling and the cache file in one
+    go, and leaves nothing to go stale.
+    """
+    page = get(INDEX, timeout=45)
     soup = BeautifulSoup(page.text, "html.parser")
     select = soup.find("select", {"name": "select_pays"})
     if select is None:
         raise CollectorError("France country picker not found on the index page")
 
-    form = select.find_parent("form")
-    hidden = {
-        i.get("name"): i.get("value", "")
-        for i in (form.find_all("input", {"type": "hidden"}) if form else [])
-        if i.get("name")
-    }
-
     mapping: dict[str, str] = {}
     for option in select.find_all("option"):
-        value = (option.get("value") or "").strip()
+        if not (option.get("value") or "").strip():
+            continue  # the "select a country" placeholder
         label = option.get_text(strip=True)
-        if not value:
-            continue
-        payload = dict(hidden)
-        payload["select_pays"] = value
-        try:
-            resp = session.post(INDEX, data=payload, timeout=45, allow_redirects=True)
-        except requests.RequestException:
-            continue
-        match = re.search(r"/fr/information-par-pays/([a-z0-9-]+)", resp.url)
-        if match:
-            mapping[label] = match.group(1)
+        slug = slugify(label)
+        if label and slug:
+            mapping[label] = slug
 
     if not mapping:
-        raise CollectorError("France slug discovery resolved zero countries")
+        raise CollectorError("France country picker held no usable options")
     if save:
         SLUG_CACHE.parent.mkdir(parents=True, exist_ok=True)
         SLUG_CACHE.write_text(
@@ -117,7 +126,29 @@ def discover_slugs(save: bool = True) -> dict[str, str]:
 
 def _parse_country(name: str, slug: str) -> list[Record]:
     url = SECURITY.format(slug=slug)
-    html = get(url).text
+
+    # Nine of the 197 countries in the picker have a country page but no
+    # security page at all - Liechtenstein, Kiribati, Nauru, Tuvalu, Niue, the
+    # Marshall Islands, Micronesia, the Vatican and the Arctic entry, as of
+    # 10 Sep 2026. That is France declining to publish security advice, which is
+    # information rather than a fetch failure, so it produces an unrated record
+    # saying so instead of an error.
+    try:
+        html = get(url).text
+    except CollectorError as exc:
+        if "HTTP 404" in str(exc):
+            rec = Record(
+                source=SOURCE,
+                source_name=SOURCE_NAME,
+                raw_name=name,
+                url=f"{ROOT}/fr/information-par-pays/{slug}",
+                level=None,
+                level_basis="France publishes no security page for this country",
+            )
+            rec.notes.append("no conseils-aux-voyageurs-securite page exists")
+            return [rec]
+        raise
+
     soup = BeautifulSoup(html, "html.parser")
 
     for junk in soup.select("script, style, nav, header, footer"):
