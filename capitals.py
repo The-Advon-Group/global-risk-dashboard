@@ -88,7 +88,25 @@ CAPITALS: dict[str, str] = {
     "TC": "Cockburn Town", "VG": "Road Town", "VI": "Charlotte Amalie",
     "AS": "Pago Pago", "SH": "Jamestown", "FK": "Stanley", "GI": "Gibraltar",
     "GL": "Nuuk", "FO": "Torshavn",
+    # Added 10 Sep 2026: every code in Canada's feed that had no capital here,
+    # found by diffing the table against the live spine rather than guessing.
+    "PT-20": "Ponta Delgada",      # Azores, as Canada codes it
+    "IC": "Las Palmas",            # Canary Islands; co-capital with Santa Cruz
+    "CK": "Avarua",                # Cook Islands
+    "XK": "Pristina",              # Kosovo
+    "YT": "Mamoudzou",             # Mayotte
+    "NU": "Alofi",                 # Niue
+    "MP": "Saipan",                # Northern Mariana Islands
+    "PM": "Saint-Pierre",          # Saint Pierre and Miquelon
+    "EH": "Laayoune",              # Western Sahara, de facto seat
 }
+
+# Entries that genuinely have no capital city. They are not omissions, and the
+# code must not treat them as gaps to be filled later: Antarctica has no
+# government, and Tokelau's three atolls rotate the seat annually rather than
+# holding one. Rows for these publish the source's country-wide figure and say
+# so in the caveat instead of naming a city.
+NO_CAPITAL = {"AQ": "Antarctica has no capital", "TK": "Tokelau's seat rotates annually"}
 
 # Additional names for the same city, including seats of government that differ
 # from the ISO capital and older forms still used in advisory prose.
