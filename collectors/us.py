@@ -135,23 +135,81 @@ def collect() -> list[Record]:
     return records
 
 
-def probe_cadataapi() -> dict:
-    """Check whether State's API has started serving advisories.
+# Official, published routes to US advisory data. The point of probing all of
+# them each cycle is that we do not know which State will serve to a program.
+CANDIDATE_ROUTES = {
+    "list_page": LIST_PAGE,
+    "advisories_api": ADVISORY_API,
+    "country_info_api": NARRATIVE_API,
+    "rss_change_feed": "https://travel.state.gov/_res/rss/TAsTWs.xml",
+    "open_data_xml": (
+        "https://cadatacatalog.state.gov/dataset/4a387c35-29cb-4902-b91d-3da0dc02e4b2"
+        "/resource/4c727464-8e6f-4536-b0a5-0a343dc6c7ff/download/traveladvisory.xml"
+    ),
+}
 
-    Cheap, runs each cycle, and writes a line into the run report. If this ever
-    returns populated=True the list-page scrape can be retired for a supported
-    API, which is strictly better.
+
+def probe_us_routes() -> dict:
+    """Ask each published US route whether it will answer an honest request.
+
+    Written 10 Sep 2026 after the first live run failed with HTTP 403. That 403
+    is Cloudflare bot protection on travel.state.gov, and it is not something
+    this build will try to defeat - no spoofed browser user agent, no headless
+    browser driven at the challenge. The data is public domain and State
+    publishes it for reuse, but the front door is theirs to lock, and picking it
+    would make every other claim this project makes about attribution and good
+    faith worth less.
+
+    So instead: identify ourselves honestly, try each route State actually
+    publishes, and record what each one says. Whatever answers, we use. The
+    result rides in every run record so the picture stays current - a route that
+    opens later gets noticed without anyone checking by hand.
     """
-    try:
-        text = get(ADVISORY_API, retries=1, timeout=20).text
-    except CollectorError as exc:
-        return {"reachable": False, "populated": False, "detail": str(exc)}
-    populated = "<Rss" in text or "<item" in text
-    return {
-        "reachable": True,
-        "populated": populated,
-        "detail": "endpoint returns an empty ArrayOfRss" if not populated else "now populated",
+    results: dict[str, dict] = {}
+    for name, url in CANDIDATE_ROUTES.items():
+        try:
+            resp = get(url, retries=1, timeout=30)
+            body = resp.text
+            results[name] = {
+                "status": resp.status_code,
+                "usable": True,
+                "bytes": len(body),
+                "note": _describe(name, body),
+            }
+        except CollectorError as exc:
+            detail = str(exc)
+            blocked = "HTTP 403" in detail
+            results[name] = {
+                "status": 403 if blocked else None,
+                "usable": False,
+                "note": (
+                    "refused as automated traffic - not circumvented by design"
+                    if blocked
+                    else detail[:160]
+                ),
+            }
+    results["_summary"] = {
+        "open": sorted(k for k, v in results.items() if v.get("usable")),
+        "closed": sorted(k for k, v in results.items() if not v.get("usable")),
     }
+    return results
+
+
+def _describe(name: str, body: str) -> str:
+    if name == "advisories_api":
+        return ("still an empty ArrayOfRss"
+                if "<Rss" not in body and "<item" not in body else "now populated")
+    if name == "list_page":
+        count = body.count("level-title-")
+        return f"{count} advisory levels present in the HTML"
+    if name == "open_data_xml":
+        return f"{body.count('<Country')} country elements"
+    return f"{len(body)} bytes returned"
+
+
+# Kept so older callers and the pipeline keep working.
+def probe_cadataapi() -> dict:
+    return probe_us_routes()
 
 
 def fetch_country_narratives() -> dict[str, dict[str, str]]:
