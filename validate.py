@@ -19,6 +19,10 @@ from collections import Counter
 # Sources needed before the composite can be scored at all (plan, Phase 2).
 COMPOSITE_MINIMUM = 3
 
+# Japan is deferred until after beta, so the denominator is four, not five.
+# Imported from the collector so restoring Japan stays a one-line change.
+from collectors.japan import ACTIVE_SOURCE_COUNT as ACTIVE_SOURCES
+
 REQUIRED_FIELDS = ("iso2", "name")
 REQUIRED_SOURCE_FIELDS = ("url", "retrieved_at")
 
@@ -50,7 +54,7 @@ def validate(
                 "level": "warning",
                 "code": "below_composite_minimum",
                 "detail": (
-                    f"only {len(working)} of 5 sources returned usable data "
+                    f"only {len(working)} of {ACTIVE_SOURCES} sources returned usable data "
                     f"({', '.join(working) or 'none'}); the terrorism composite "
                     f"needs {COMPOSITE_MINIMUM}. Composite renders Unrated."
                 ),
