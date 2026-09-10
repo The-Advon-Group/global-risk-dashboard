@@ -26,7 +26,7 @@ from pathlib import Path
 
 from collectors import canada, france, japan, uk, us
 from collectors.base import CollectorError, Record, get, utcnow
-from countries import SHARED_PAGE_NOTE, Spine, resolve, roll_up
+from countries import SHARED_PAGE_NOTE, Spine, resolve_all, roll_up
 from headline import apply_to_row
 from validate import validate
 from western import apply_to_row as western_column
@@ -129,31 +129,35 @@ def reconcile(records: dict[str, list[Record]], spine: Spine) -> tuple[dict, lis
 
     for source, recs in records.items():
         for rec in recs:
-            res = resolve(rec.raw_name, spine, supplied_iso2=rec.iso2)
-            if res.iso2 is None:
-                unmapped.append(
-                    {"source": source, "name": rec.raw_name, "reason": res.note}
-                )
-                continue
+            # resolve_all, not resolve: a handful of source pages cover several
+            # countries at once, and each one has to receive the record.
+            for res in resolve_all(rec.raw_name, spine, supplied_iso2=rec.iso2):
+                if res.iso2 is None:
+                    unmapped.append(
+                        {"source": source, "name": rec.raw_name, "reason": res.note}
+                    )
+                    continue
 
-            rec.iso2 = res.iso2
-            row = countries.setdefault(
-                res.iso2,
-                {
-                    "iso2": res.iso2,
-                    "name": spine.by_iso.get(res.iso2, rec.raw_name),
-                    "sources": {},
-                },
-            )
-            bucket = row["sources"].setdefault(source, {"records": [], "level": None})
-            entry = rec.as_dict()
-            entry["match_method"] = res.method
-            if res.note:
-                entry.setdefault("notes", []).append(res.note)
-            shared = SHARED_PAGE_NOTE.get((source, res.iso2))
-            if shared:
-                entry.setdefault("notes", []).append(shared)
-            bucket["records"].append(entry)
+                rec.iso2 = res.iso2
+                row = countries.setdefault(
+                    res.iso2,
+                    {
+                        "iso2": res.iso2,
+                        "name": spine.by_iso.get(res.iso2, rec.raw_name),
+                        "sources": {},
+                    },
+                )
+                bucket = row["sources"].setdefault(
+                    source, {"records": [], "level": None}
+                )
+                entry = rec.as_dict()
+                entry["match_method"] = res.method
+                if res.note:
+                    entry.setdefault("notes", []).append(res.note)
+                shared = SHARED_PAGE_NOTE.get((source, res.iso2))
+                if shared:
+                    entry.setdefault("notes", []).append(shared)
+                bucket["records"].append(entry)
 
     for row in countries.values():
         for source, bucket in row["sources"].items():
