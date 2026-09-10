@@ -112,9 +112,30 @@ def test_alert_vocabulary() -> None:
           == ALERT_TO_LEVEL["avoid_all_travel_to_whole_country"])
 
 
+def test_residual_tier() -> None:
+    """Which level the ground outside the carve-outs gets.
+
+    Ukraine carries two "to parts" alerts at once - avoid all travel to Crimea
+    and the border oblasts, avoid all but essential travel to the rest. Giving
+    the remainder the provisional level 1 published Ukraine at 1 in run #9.
+    """
+    print("Two advise-against tiers")
+    levels = sorted({ALERT_TO_LEVEL[s] for s in
+                     ["avoid_all_travel_to_parts",
+                      "avoid_all_but_essential_travel_to_parts"]})
+    check("the pair resolves to two distinct levels", levels == [3, 4], str(levels))
+    check("the remainder takes the lower of them, not the provisional 1",
+          levels[0] == 3, str(levels))
+    check("the carve-out keeps the higher", max(levels) == 4)
+
+    print("One advise-against tier")
+    one = sorted({ALERT_TO_LEVEL[s] for s in ["avoid_all_travel_to_parts"]})
+    check("nothing is stated about the remainder", len(one) == 1, str(one))
+
+
 if __name__ == "__main__":
     for fn in (test_whole_country_with_exceptions, test_wording_variants,
-               test_missing_input, test_alert_vocabulary):
+               test_missing_input, test_alert_vocabulary, test_residual_tier):
         fn()
     print()
     print("FAILURES:", FAILS)
