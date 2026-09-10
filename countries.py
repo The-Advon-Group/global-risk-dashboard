@@ -110,6 +110,51 @@ ALIASES: dict[str, str] = {
     "us virgin islands": "VI",
     "hong kong": "HK",
     "occupied palestinian territories": "PS",
+    # --- added 10 Sep 2026, from the first live run's unmapped list ---
+    "western sahara": "EH",
+    "usa": "US",
+    "united states": "US",
+    "united states of america": "US",
+    "israel": "IL",
+    "palestine": "PS",
+    "federated states of micronesia": "FM",
+    "micronesia": "FM",
+    "wallis and futuna": "WF",
+    "st pierre and miquelon": "PM",
+    "saint pierre and miquelon": "PM",
+    "st maarten": "SX",
+    "south georgia and the south sandwich islands": "GS",
+    "british indian ocean territory": "IO",
+    "pitcairn island": "PN",
+    "pitcairn": "PN",
+    "arctique": "AQ",
+    "arctic": "AQ",
+}
+
+# Some sources publish ONE page covering SEVERAL countries. The FCDO does this
+# for a handful of small territories. A one-name-to-one-country model silently
+# loses the others: before this existed, "Cook Islands, Tokelau and Niue"
+# prefix-matched to the Cook Islands alone and Tokelau and Niue quietly received
+# no UK rating at all. That is exactly the silent gap this build is meant not to
+# have, so these names resolve to every country they cover and the record is
+# duplicated across them, each noting the shared page.
+MULTI_COUNTRY: dict[str, list[str]] = {
+    "cook islands tokelau and niue": ["CK", "TK", "NU"],
+    "st martin and st barthelemy": ["MF", "BL"],
+    "saint martin and saint barthelemy": ["MF", "BL"],
+    "bonaire st eustatius saba": ["BQ"],
+    "bonaire sint eustatius saba": ["BQ"],
+    "antarctica british antarctic territory": ["AQ"],
+}
+
+# Names that are genuinely ambiguous and must NEVER be guessed. "Congo" is the
+# obvious one: the FCDO uses it for the Republic of the Congo and lists the
+# Democratic Republic separately, but other sources use it the other way round.
+# Resolving it by proximity or prefix would put a level-3 advisory on the wrong
+# country, so it is reported as unmapped with the reason stated.
+AMBIGUOUS: dict[str, str] = {
+    "congo": "ambiguous between Republic of the Congo (CG) and "
+             "Democratic Republic of the Congo (CD) - source must be checked",
 }
 
 # Sources that advise on a territory via another country's page. Recorded so
@@ -154,7 +199,7 @@ def normalise(name: str) -> str:
         return ""
     text = unicodedata.normalize("NFKD", name)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = text.lower().replace("&", " and ").replace("'", "").replace("’", "")
+    text = text.lower().replace("&", " and ").replace("'", "").replace("â", "")
     text = _PARENS.sub(" ", text)
     text = _NONWORD.sub(" ", text)
     text = _SPACES.sub(" ", text).strip()
@@ -163,6 +208,32 @@ def normalise(name: str) -> str:
 
 
 _ALIAS_INDEX: dict[str, str] = _build_alias_index()
+_MULTI_INDEX: dict[str, list[str]] = {
+    normalise(k): v for k, v in MULTI_COUNTRY.items() if normalise(k)
+}
+_AMBIGUOUS_INDEX: dict[str, str] = {
+    normalise(k): v for k, v in AMBIGUOUS.items() if normalise(k)
+}
+
+
+def resolve_all(name: str, spine: "Spine", *, supplied_iso2: str | None = None) -> list["Resolution"]:
+    """Resolve a source's name to EVERY country it covers.
+
+    Almost always one. Returns several only for the shared pages listed in
+    MULTI_COUNTRY, and none at all for a name in AMBIGUOUS or one nothing
+    matches - in which case the single unresolved Resolution carries the reason.
+    """
+    key = normalise(name)
+    if key in _AMBIGUOUS_INDEX:
+        return [Resolution(None, "ambiguous", _AMBIGUOUS_INDEX[key])]
+    if key in _MULTI_INDEX:
+        codes = _MULTI_INDEX[key]
+        return [
+            Resolution(code, "multi-country page",
+                       f"'{name}' is one source page covering {len(codes)} countries")
+            for code in codes
+        ]
+    return [resolve(name, spine, supplied_iso2=supplied_iso2)]
 
 
 @dataclass
@@ -187,6 +258,22 @@ class Spine:
                 spine.eng_index[normalise(eng)] = code
             if fra:
                 spine.fra_index[normalise(fra)] = code
+
+        # Canada publishes no advice about Canada, so the spine built from its
+        # feed has a Canada-shaped hole in it. The first live run surfaced this
+        # as the FCDO's "Canada" failing to resolve. Every source country has
+        # the same gap in its own feed, so all four are seeded explicitly - they
+        # are countries the dashboard must be able to list even though the
+        # source that names them cannot.
+        for code, eng, fra in (
+            ("CA", "Canada", "Canada"),
+            ("US", "United States", "\u00c9tats-Unis"),
+            ("GB", "United Kingdom", "Royaume-Uni"),
+            ("FR", "France", "France"),
+        ):
+            spine.by_iso.setdefault(code, eng)
+            spine.eng_index.setdefault(normalise(eng), code)
+            spine.fra_index.setdefault(normalise(fra), code)
         return spine
 
     def add(self, iso2: str, name: str) -> None:
@@ -214,6 +301,8 @@ def resolve(name: str, spine: Spine, *, supplied_iso2: str | None = None) -> Res
     if not key:
         return Resolution(None, "unresolved", "empty name")
 
+    if key in _AMBIGUOUS_INDEX:
+        return Resolution(None, "ambiguous", _AMBIGUOUS_INDEX[key])
     if key in _ALIAS_INDEX:
         return Resolution(_ALIAS_INDEX[key], "alias table")
     if key in spine.eng_index:
