@@ -77,7 +77,12 @@ RSS_FEED = "https://travel.state.gov/_res/rss/TAsTWs.xml"
 # "Mexico Travel Advisory - Level 2: Exercise Increased Caution" both occur, so
 # the split is on the level rather than on the dash.
 TITLE = re.compile(r"^(?P<name>.+?)\s*[-–]\s*Level\s*(?P<level>[1-4])\s*:\s*(?P<label>.+)$")
-TRAILING_ADVISORY = re.compile(r"\s*Travel\s+Advisory\s*$", re.I)
+# Suffixes State appends to the destination name in the feed's titles. "- See
+# Summaries" hangs off the combined China/Hong Kong/Macau advisory and is part
+# of the title, not part of the country.
+TRAILING_ADVISORY = re.compile(
+    r"\s*(?:[-–]\s*See\s+Summaries|Travel\s+Advisory)\s*$", re.I
+)
 
 # The summary says "due to crime, terrorism, and kidnapping". These map that
 # prose onto State's own indicator letters. Ordered longest-first so "civil
@@ -100,12 +105,16 @@ def collect() -> list[Record]:
     from xml.etree import ElementTree as ET
 
     try:
-        xml = get(RSS_FEED, timeout=60).text
+        # BYTES, not text. The feed serves UTF-8 and declares it in the XML
+        # prolog, but the HTTP response carries no charset, so requests guesses
+        # and guessed wrong - run #7 produced "CuraÃ§ao", which then matched no
+        # country. Handing the parser the raw bytes lets the declaration decide.
+        raw = get(RSS_FEED, timeout=60).content
     except CollectorError as exc:
         raise CollectorError(f"US advisory feed unreachable: {exc}") from exc
 
     try:
-        root = ET.fromstring(xml)
+        root = ET.fromstring(raw)
     except ET.ParseError as exc:
         raise CollectorError(f"US advisory feed did not parse as XML: {exc}") from exc
 
@@ -122,7 +131,12 @@ def collect() -> list[Record]:
                 skipped.append(title[:80])
             continue
 
-        name = TRAILING_ADVISORY.sub("", match.group("name")).strip()
+        name = match.group("name")
+        for _ in range(3):  # "X Travel Advisory - See Summaries" carries both
+            stripped = TRAILING_ADVISORY.sub("", name).strip()
+            if stripped == name:
+                break
+            name = stripped
         level = int(match.group("level"))
         label = f"Level {level}: {match.group('label').strip()}"
 

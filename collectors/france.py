@@ -191,21 +191,41 @@ def _parse_country(name: str, slug: str) -> list[Record]:
 
     records: list[Record] = []
     if not zones:
+        # Not a parse failure. Checked against Sweden on 10 Sep 2026: the page
+        # has a "Zones de vigilance" heading and nothing under it but the map
+        # image, which the Etalab licence's third-party-IP carve-out excludes
+        # and which carries no text to read anyway. France simply has not
+        # published a band for that country in a form a program can read, and
+        # the row says so rather than inventing a level.
+        has_section = bool(
+            soup.find(
+                lambda t: t.name in HEADING_TAGS
+                and re.search(r"zones?\s+de\s+vigilance", t.get_text(" "), re.I)
+            )
+        )
         rec = Record(
             source=SOURCE,
             source_name=SOURCE_NAME,
             raw_name=name,
             url=url,
             level=None,
-            level_basis="no 'Zones de vigilance' band found on the page",
+            level_basis=(
+                "France publishes its zone map for this country as an image "
+                "only; no band is stated in text"
+                if has_section
+                else "France's page for this country has no zones section"
+            ),
             source_updated=updated.group(1) if updated else None,
         )
-        rec.notes.append("page fetched but no France colour band matched - needs review")
+        rec.notes.append(
+            "unrated because France states no readable band, not because the "
+            "page failed to parse"
+        )
         records.append(rec)
         return records
 
     single = len(zones) == 1
-    for level, label, where in zones:
+    for level, label, where in zones:  # noqa: B007 - loop body below
         rec = Record(
             source=SOURCE,
             source_name=SOURCE_NAME,

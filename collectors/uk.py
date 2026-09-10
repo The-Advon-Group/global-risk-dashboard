@@ -25,10 +25,14 @@ INDEX = "https://www.gov.uk/api/content/foreign-travel-advice"
 SOURCE = "uk"
 SOURCE_NAME = "UK Foreign, Commonwealth & Development Office - travel advice"
 
-# The FCDO says whether advice covers the whole country or named parts of it,
-# and a parts-only advisory already emits its own residual record, so the
-# country-wide figure here is the FCDO's, not ours.
-PUBLISHES_NATIONAL_LEVEL = True
+# The FCDO states a level for the whole country only when its advice covers the
+# whole country. For a parts-only advisory it says "advice against all travel to
+# PARTS of X", which is not a verdict on X - the country-wide number in that case
+# is our roll-up of the carve-out and the residual, and feeding it back in as the
+# FCDO's own figure republishes the carve-out as the country. Whole-country
+# advisories are unaffected: they produce one record with no region, so
+# `headline.resolve` uses the national level either way.
+PUBLISHES_NATIONAL_LEVEL = False
 
 # FCDO's published alert vocabulary -> our shared 1-4 scale.
 # "to_parts" keeps the same severity: per the agreed rule, a country rolls up to
@@ -126,6 +130,14 @@ def _one(child: dict) -> list[Record]:
             source_updated=rec.source_updated,
         )
         rec.level = RESIDUAL_LEVEL
+        # The region text matters as much as the level. Without it this record
+        # is invisible to `headline.resolve`, which only looks at records that
+        # name a place - so the carve-out won by being the only regional record
+        # and the whole country took its level. Run #7 had the FCDO rating
+        # Benin, Georgia, Armenia, Burundi and Cote d'Ivoire at 4 for exactly
+        # that reason. "the rest of the country" is what the FCDO's own map
+        # calls it, and `headline.RESIDUAL` recognises it.
+        rec.region = "the rest of the country"
         rec.level_basis = (
             "rest of country - FCDO advises against travel only to named parts"
         )
