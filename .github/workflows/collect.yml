@@ -68,6 +68,17 @@ jobs:
           path: run-report.txt
           retention-days: 30
 
+      # A dry run builds the whole snapshot and commits none of it. Uploading it
+      # here means the page can be built and checked against real data without
+      # anything being published.
+      - name: Upload dry-run snapshot
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-snapshot
+          path: run-snapshot.json
+          retention-days: 7
+
       - name: Commit snapshot
         if: ${{ !inputs.dry_run }}
         run: |
