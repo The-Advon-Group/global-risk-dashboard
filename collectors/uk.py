@@ -149,13 +149,33 @@ def _one(child: dict) -> list[Record]:
         # that reason. "the rest of the country" is what the FCDO's own map
         # calls it, and `headline.RESIDUAL` recognises it.
         rec.region = "the rest of the country"
-        rec.level_basis = (
-            "rest of country - FCDO advises against travel only to named parts"
-        )
+
+        # An advisory with TWO "to parts" alerts is telling us about two tiers,
+        # and the lower one is what covers the ground the higher one does not.
+        # Ukraine carries both: "avoid all travel" to Crimea and the border
+        # oblasts, and "avoid all but essential travel" to the rest. Handing the
+        # remainder the provisional 1 published Ukraine at level 1 in run #9,
+        # which is not remotely what the FCDO says. Where there is only one
+        # alert, we genuinely have nothing about the remainder and the
+        # provisional level stands.
+        lower = sorted({ALERT_TO_LEVEL[s] for s in known})
+        if len(lower) > 1:
+            rec.level = lower[0]
+            rec.level_basis = (
+                "rest of country - the FCDO's lower advise-against tier, which "
+                "covers what the higher one does not"
+            )
+        else:
+            rec.level = RESIDUAL_LEVEL
+            rec.level_basis = (
+                "rest of country - FCDO advises against travel only to named parts"
+            )
+            rec.notes.append(
+                "provisional level 1 - refine to 1 vs 2 once phrase ladder lands"
+            )
         rec.notes.append(
             f"carve-out at level {carve_level} applies to named parts, not the whole country"
         )
-        rec.notes.append("provisional level 1 - refine to 1 vs 2 once phrase ladder lands")
         return [rec, carve]
     else:
         # No advise-against alert. Distinguishing level 1 from level 2 depends on
