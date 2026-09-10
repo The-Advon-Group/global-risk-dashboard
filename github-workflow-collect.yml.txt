@@ -1,0 +1,58 @@
+# Phase 1 workflow: manual runs only.
+#
+# The scheduled cadence, the keepalive against GitHub's 60-day disable rule, and
+# the external staleness check are Phase 4 and are deliberately NOT wired up
+# here yet - a schedule that starts running before the anonymity setup is done
+# would bake the wrong commit identity into the history.
+#
+# Before the first run, read the "Anonymity" section of the README. The account,
+# the organisation and the git identity all need to be the project identity from
+# the very first commit.
+
+name: Collect advisories
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Comma-separated source keys (ca,uk,us,fr,jp)"
+        default: "ca,uk,us,fr"
+      dry_run:
+        description: "Collect and report without writing a snapshot"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run offline tests
+        run: python test_pipeline.py
+
+      - name: Collect
+        run: |
+          python pipeline.py \
+            --sources "${{ inputs.sources }}" \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Commit snapshot
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name  "${{ vars.COMMIT_NAME  || 'risk-dashboard-bot' }}"
+          git config user.email "${{ vars.COMMIT_EMAIL || 'bot@users.noreply.github.com' }}"
+          git add data snapshots
+          git diff --staged --quiet || git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
