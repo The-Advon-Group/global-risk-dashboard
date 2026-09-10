@@ -48,14 +48,14 @@ SOURCE_NAME = "Ministere de l'Europe et des Affaires etrangeres - Conseils aux v
 
 # France's colour bands, highest first so the first match wins.
 ZONE_BANDS = [
-    (4, re.compile(r"zones?\s+formellement\s+d[Ã©e]conseill", re.I), "zone rouge - formellement deconseille"),
-    (3, re.compile(r"d[Ã©e]conseill\w*\s+sauf\s+raison\s+imp[Ã©e]rative", re.I), "zone orange - deconseille sauf raison imperative"),
-    (2, re.compile(r"vigilance\s+renforc[Ã©e]e", re.I), "zone jaune - vigilance renforcee"),
+    (4, re.compile(r"zones?\s+formellement\s+d[ée]conseill", re.I), "zone rouge - formellement deconseille"),
+    (3, re.compile(r"d[ée]conseill\w*\s+sauf\s+raison\s+imp[ée]rative", re.I), "zone orange - deconseille sauf raison imperative"),
+    (2, re.compile(r"vigilance\s+renforc[ée]e", re.I), "zone jaune - vigilance renforcee"),
     (1, re.compile(r"vigilance\s+normale", re.I), "zone verte - vigilance normale"),
 ]
 
-UPDATED = re.compile(r"[Dd]erni[Ã¨e]re\s+actualisation\s+le\s+([0-9]{2}/[0-9]{2}/[0-9]{4})")
-STILL_VALID = re.compile(r"information\s+toujours\s+valable\s+[Ã a]\s+la\s+date\s+du\s+jour", re.I)
+UPDATED = re.compile(r"[Dd]erni[èe]re\s+actualisation\s+le\s+([0-9]{2}/[0-9]{2}/[0-9]{4})")
+STILL_VALID = re.compile(r"information\s+toujours\s+valable\s+[àa]\s+la\s+date\s+du\s+jour", re.I)
 
 
 def _load_slug_cache() -> dict[str, str]:
