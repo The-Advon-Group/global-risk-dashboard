@@ -64,13 +64,24 @@ ZONE_BANDS = [
     (1, re.compile(r"vigilance\s+normale", re.I), "zone verte - vigilance normale"),
 ]
 
-# The block that carries the bands. Everything outside it is narrative and must
-# not be scanned for band phrases: the Seychelles page says "formellement
-# deconseillee" again halfway down a paragraph about piracy, and the Nigeria
-# page repeats "deconseilles sauf raison imperative" inside the prose under its
-# own heading. Reading the whole page rated both countries 4.
-ZONES_HEADING = re.compile(r"zones?\s+de\s+vigilance", re.I)
+# A band is only a band when it is a HEADING that starts with "Zone". That one
+# rule is what fixes the original defect: the Seychelles page says "formellement
+# deconseillee" again halfway down a paragraph about piracy, and reading body
+# text rated the country by whichever phrase happened to appear. Prose is never
+# a heading, so scoping to headings removes the whole class of false positive.
+#
+# Requiring an enclosing "Zones de vigilance" block was tried first and was too
+# strict - run #6 lost eighty French rows to pages that put a heading between
+# the anchor and the bands, or carry the anchor only as a figure caption.
+ZONE_HEADING = re.compile(r"^zones?\b", re.I)
 HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")
+
+# Headings that begin the narrative below the bands. Anything at or after one of
+# these is commentary on the zones, not a zone.
+END_OF_ZONES = re.compile(
+    r"risques?\s+encourus|recommandations\s+associ|liste\s+des\s+repr[ée]sentations",
+    re.I,
+)
 
 UPDATED = re.compile(r"[Dd]erni[èe]re\s+actualisation\s+le\s+([0-9]{2}/[0-9]{2}/[0-9]{4})")
 STILL_VALID = re.compile(r"information\s+toujours\s+valable\s+[àa]\s+la\s+date\s+du\s+jour", re.I)
@@ -233,28 +244,15 @@ def _read_zones(soup) -> list[tuple[int, str, str]]:
     countries by whichever phrase happened to appear rather than by what France
     actually classified.
     """
-    anchor = soup.find(
-        lambda tag: tag.name in HEADING_TAGS and ZONES_HEADING.search(tag.get_text(" "))
-    )
-    if anchor is None:
-        return []
-
-    # The band headings sit in a different container from the "Zones de
-    # vigilance" heading itself, so this walks document order rather than
-    # siblings - but it stops at the first heading of the same rank or higher
-    # that is not a band, which is the next section of the page. Without that
-    # stop the walk runs to the foot of the document and picks up band phrases
-    # out of the narrative, which is the bug being fixed.
-    anchor_rank = HEADING_TAGS.index(anchor.name)
     zones: list[tuple[int, str, str]] = []
-    for node in anchor.find_all_next():
-        if node.name not in HEADING_TAGS:
-            continue
+    for node in soup.find_all(HEADING_TAGS):
         heading = re.sub(r"\s+", " ", node.get_text(" ")).strip()
+        if END_OF_ZONES.search(heading):
+            break
+        if not ZONE_HEADING.match(heading):
+            continue
         band = _band_of(heading)
         if band is None:
-            if HEADING_TAGS.index(node.name) <= anchor_rank:
-                break
             continue
         level, label = band
         zones.append((level, label, _text_under(node)))

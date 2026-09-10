@@ -3,26 +3,36 @@
 Public domain. Attribution to the Bureau of Consular Affairs appreciated,
 not required.
 
-Verification note (8 Sep 2026) - this replaces the "US feed is narrower than
-assumed" blocker in the plan:
+WHERE THE LEVELS COME FROM, settled 10 September 2026 across runs #4 to #6.
 
-  * The RSS feed at travel.state.gov/_res/rss/TAsTWs.xml is a change feed of ~21
-    recently-updated advisories. Not usable as a registry. Unchanged.
-  * cadataapi.state.gov IS a real, public, unauthenticated API - but its
-    `/api/TravelAdvisories` endpoint currently returns an empty ArrayOfRss, so
-    it does not supply levels today. Kept in `probe_cadataapi()` below so a
-    future run notices if State fills it in.
-  * The advisories LIST PAGE is fully server-rendered: a single GET returns all
-    ~228 destinations with level, risk-indicator tags and issue date. The
-    client-side pagination that makes the page look like it holds five rows is
-    applied by JavaScript after load and does not affect a plain HTTP fetch.
+The advisories list page is server-rendered and carries every destination with
+its level, State's own risk-indicator tags and the issue date. It is also behind
+Cloudflare, and returns HTTP 403 to an honestly-identified program. This build
+does not try to get past that - no spoofed browser user agent, no headless
+browser driven at the challenge. The data is public domain and State publishes
+it for reuse, but the front door is theirs to lock, and picking it would make
+every other claim this project makes about attribution and good faith worth
+less. `probe_us_routes()` asks each published route politely once per run and
+records what each one says, so a door that opens later gets noticed.
 
-So the US column costs one request, not 195.
+Of the five published routes, three answer:
 
-`/api/CountryTravelInformation` on the same API returns the full narrative text
-(including the "Terrorism:" block of each country's safety-and-security
-section) for every country. That is the raw input the Phase 2 phrase ladder
-needs, and `fetch_country_narratives()` retrieves it.
+  * `_res/rss/TAsTWs.xml` ANSWERS, and the note this docstring used to carry -
+    "a change feed of ~21 recently-updated advisories, not usable as a
+    registry" - is out of date. On 10 Sep 2026 it returned 216 items, one per
+    destination, every one carrying its level in the title ("Suriname - Level 1:
+    Exercise Normal Precautions") and again as a category. That is the US
+    column, and it costs one request.
+  * `/api/CountryTravelInformation` answers with ~5.9MB of per-country narrative
+    but does not currently parse as XML - see `probe_us_shape()`.
+  * `/api/TravelAdvisories` answers with an empty ArrayOfRss, as it has since
+    8 Sep.
+
+WHAT THE FEED DOES NOT CARRY. State's risk-indicator tags - the (C)(T)(K) pills
+on the list page - are structured data there and prose here. `collect()` reads
+them out of the advisory summary instead, and every record says so in
+`indicators_basis`, because an inferred flag and a published one are not the
+same thing and the difference must not disappear into the same field.
 """
 
 from __future__ import annotations
@@ -61,7 +71,122 @@ INDICATOR_NAMES = {
 }
 
 
+RSS_FEED = "https://travel.state.gov/_res/rss/TAsTWs.xml"
+
+# "Suriname - Level 1: Exercise Normal Precautions" and
+# "Mexico Travel Advisory - Level 2: Exercise Increased Caution" both occur, so
+# the split is on the level rather than on the dash.
+TITLE = re.compile(r"^(?P<name>.+?)\s*[-–]\s*Level\s*(?P<level>[1-4])\s*:\s*(?P<label>.+)$")
+TRAILING_ADVISORY = re.compile(r"\s*Travel\s+Advisory\s*$", re.I)
+
+# The summary says "due to crime, terrorism, and kidnapping". These map that
+# prose onto State's own indicator letters. Ordered longest-first so "civil
+# unrest" is not swallowed by "unrest".
+INDICATOR_PHRASES: list[tuple[str, str]] = [
+    ("K", r"kidnapping|hostage[- ]taking|abduction"),
+    ("D", r"wrongful detention|unjust (?:arrest|detention)|exit ban"),
+    ("T", r"terroris"),
+    ("U", r"civil unrest|unrest|armed conflict|war\b|violence"),
+    ("C", r"\bcrime\b|criminal"),
+    ("H", r"health (?:risk|care|emergenc)|disease outbreak|\bepidemic\b"),
+    ("N", r"natural disaster|hurricane|earthquake|volcan|cyclone|typhoon"),
+]
+DUE_TO = re.compile(r"due to\b(?P<reasons>[^.]{0,300})", re.I)
+TAG_STRIP = re.compile(r"<[^>]+>")
+
+
 def collect() -> list[Record]:
+    """One request to State's advisory feed, one record per destination."""
+    from xml.etree import ElementTree as ET
+
+    try:
+        xml = get(RSS_FEED, timeout=60).text
+    except CollectorError as exc:
+        raise CollectorError(f"US advisory feed unreachable: {exc}") from exc
+
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise CollectorError(f"US advisory feed did not parse as XML: {exc}") from exc
+
+    records: list[Record] = []
+    skipped: list[str] = []
+
+    for item in root.findall(".//item"):
+        title = (item.findtext("title") or "").strip()
+        match = TITLE.match(title)
+        if not match:
+            # Not an advisory - the feed also carries the occasional alert with
+            # no level. Recorded rather than silently dropped.
+            if title:
+                skipped.append(title[:80])
+            continue
+
+        name = TRAILING_ADVISORY.sub("", match.group("name")).strip()
+        level = int(match.group("level"))
+        label = f"Level {level}: {match.group('label').strip()}"
+
+        summary = _plain(item.findtext("description") or "")
+        indicators = _indicators_from(summary)
+
+        rec = Record(
+            source=SOURCE,
+            source_name=SOURCE_NAME,
+            raw_name=name,
+            url=(item.findtext("link") or "").strip(),
+            level=level,
+            level_label=label,
+            level_basis="State Department 4-level advisory scale (native)",
+            indicators=indicators,
+            source_updated=(item.findtext("pubDate") or "").strip() or None,
+        )
+        rec.notes.append(
+            "risk indicators read from the advisory summary text, not from "
+            "State's published risk-indicator tags"
+            if indicators
+            else "no risk indicators stated in the advisory summary"
+        )
+        records.append(rec)
+
+    if len(records) < 150:
+        raise CollectorError(
+            f"US advisory feed yielded only {len(records)} destinations; "
+            f"expected ~216. Refusing to publish a partial column. "
+            f"Skipped titles: {skipped[:5]}"
+        )
+    return records
+
+
+def _plain(html: str) -> str:
+    return re.sub(r"\s+", " ", TAG_STRIP.sub(" ", html).replace("&nbsp;", " ")).strip()
+
+
+def _indicators_from(summary: str) -> list[str]:
+    """State's indicator letters, inferred from the advisory summary.
+
+    Scoped to the "due to ..." clause where there is one. That clause is State's
+    own list of why the level is what it is, so reading it is closer to the
+    published tags than scanning the whole summary would be - a paragraph that
+    merely mentions crime elsewhere should not raise the crime flag.
+    """
+    clause = DUE_TO.search(summary)
+    text = (clause.group("reasons") if clause else "").lower()
+    if not text:
+        return []
+    found: list[str] = []
+    for letter, pattern in INDICATOR_PHRASES:
+        if re.search(pattern, text) and letter not in found:
+            found.append(letter)
+    return found
+
+
+def collect_from_list_page() -> list[Record]:
+    """The original list-page reader. Behind Cloudflare since 10 Sep 2026.
+
+    Kept, unused, because `probe_us_routes()` watches that door every cycle and
+    this is what to call the day it opens: the list page carries State's own
+    risk-indicator tags, which the feed only carries as prose.
+    """
     html = get(LIST_PAGE).text
     soup = BeautifulSoup(html, "html.parser")
 
