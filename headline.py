@@ -134,14 +134,22 @@ def resolve(
     hi = max(levels) if levels else None
 
     if capital is None:
-        return Headline(
+        # Some entries genuinely have no capital - Antarctica, Tokelau - and
+        # others are simply missing from the table. Either way the row still
+        # needs its spread caveat: the first live run refused to publish
+        # Western Sahara precisely because this branch returned without one,
+        # which was the validator catching a real hole rather than a false
+        # alarm. The caveat here names no city, because there isn't one to name.
+        head = Headline(
             level=national_level,
-            basis="no capital on file for this territory; national level used",
+            basis="no capital on file for this territory; source's national level used",
             capital=None,
             regional_min=lo,
             regional_max=hi,
-            notes=["capital unknown - add it to capitals.py"],
+            notes=["no capital on file - see capitals.py"],
         )
+        head.caveat = build_caveat(head)
+        return head
 
     level, basis, matched, excluded = (None, "", None, [])
     if regional:
@@ -207,15 +215,17 @@ def build_caveat(head: Headline) -> str | None:
     if head.regional_max == head.regional_min == head.level:
         return None
 
-    city = head.capital or "the capital"
+    # Where there is no capital to name, say what the level actually is rather
+    # than referring to a city that does not exist.
+    where = f"applies to {head.capital}" if head.capital else "is the country-wide figure"
     if head.regional_max > head.level:
         return (
-            f"This level applies to {city}. Parts of the country are rated "
+            f"This level {where}. Parts of the country are rated "
             f"higher, up to level {head.regional_max}."
         )
     if head.regional_min < head.level:
         return (
-            f"This level applies to {city}. Parts of the country are rated "
+            f"This level {where}. Parts of the country are rated "
             f"lower, down to level {head.regional_min}."
         )
     return None
