@@ -100,9 +100,20 @@ def _one(child: dict) -> list[Record]:
         carve_level = max(ALERT_TO_LEVEL[s] for s in known)
         whole = any(s in WHOLE_COUNTRY for s in known)
 
-        if whole:
+        warnings = _warnings_text(details)
+        if whole or covers_whole_country(warnings, name):
             rec.level = carve_level
-            rec.level_basis = "FCDO alert_status, whole country"
+            rec.level_basis = (
+                "FCDO alert_status, whole country"
+                if whole
+                else "FCDO advises against travel to the country itself, "
+                     "with named exceptions"
+            )
+            if not whole:
+                rec.notes.append(
+                    "alert_status says 'to parts', but the FCDO's own wording "
+                    "advises against travel to the country with exceptions"
+                )
             return [rec]
 
         # "to parts" only. This is the fix for the Azerbaijan class of error.
@@ -157,6 +168,57 @@ def _one(child: dict) -> list[Record]:
         rec.notes.append("provisional level 1 - refine to 1 vs 2 once phrase ladder lands")
 
     return [rec]
+
+
+def _warnings_text(details: dict) -> str:
+    part = next(
+        (p for p in (details.get("parts") or []) if p.get("slug") == "warnings-and-insurance"),
+        None,
+    )
+    if not part:
+        return ""
+    import re as _re
+
+    return _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", part.get("body") or "")).strip()
+
+
+def covers_whole_country(text: str, country: str) -> bool:
+    """Does a "to parts" advisory in fact cover the country, minus exceptions?
+
+    `alert_status` only says whole or parts, and "parts" turns out to cover two
+    opposite shapes. Somalia is recorded as `avoid_all_travel_to_parts`, and the
+    FCDO's own words are:
+
+        "FCDO advises against all travel to Somalia, including Somaliland,
+         except for the regions of Awdal, Maroodijeh, and Sahil."
+
+    That is the whole country with three exceptions, not a carve-out with a safe
+    remainder - so treating it as parts-only and handing the rest of the country
+    the residual level published Somalia at 1 in run #8. Benin, where the FCDO
+    names a northern border strip, is the other shape and is genuinely a
+    carve-out.
+
+    The two are distinguishable from the sentence itself: this one names the
+    COUNTRY as the thing advised against. So that is what this looks for, and
+    only within the advise-against sentence, so a passing mention of the country
+    elsewhere in the section does not count.
+    """
+    import re as _re
+
+    if not text or not country:
+        return False
+    name = _re.escape(country.strip())
+    # "advises against all travel to Somalia" / "to the whole of Somalia" /
+    # "against all but essential travel to Somalia", allowing a leading article.
+    # The trailing guard is a negative lookahead rather than \b for two reasons:
+    # "the Ruritania-Syldavia border area" must NOT match, because that names a
+    # strip and not the country, and a name ending in a bracket - the spine
+    # spells one "Cote d'Ivoire (Ivory Coast)" - has no word boundary after it.
+    pattern = (
+        r"advises\s+against\s+(?:all\s+travel|all\s+but\s+essential\s+travel)\s+to\s+"
+        r"(?:the\s+whole\s+of\s+)?(?:the\s+)?" + name + r"(?![\w-])"
+    )
+    return bool(_re.search(pattern, text, _re.I))
 
 
 def _carve_region(details: dict) -> str | None:
