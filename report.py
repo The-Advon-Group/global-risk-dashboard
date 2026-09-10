@@ -38,6 +38,7 @@ def format_report(
     spine_size: int | None = None,
     probe: dict | None = None,
     japan: dict | None = None,
+    shape: dict | None = None,
 ) -> str:
     """One screen that says what the run found and what needs a human."""
     out: list[str] = []
@@ -130,6 +131,18 @@ def format_report(
             _bullet(out, f"usable routes: {', '.join(summary['open'])}")
         else:
             _bullet(out, "no published US route answered - the US column cannot be built")
+
+    if shape:
+        out.append("")
+        out.append("US ROUTE SHAPE - can a level be read out of what answers?")
+        for name, entry in sorted(shape.items()):
+            if entry.get("error"):
+                _bullet(out, f"{name}: ERROR {entry['error']}")
+                continue
+            _bullet(out, f"{name}:")
+            for key, value in sorted(entry.items()):
+                shown = value if not isinstance(value, list) else ", ".join(map(str, value))
+                out.append(f"      {key}: {shown}")
 
     if japan:
         out.append("")

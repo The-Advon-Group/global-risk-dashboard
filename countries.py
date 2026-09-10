@@ -129,6 +129,32 @@ ALIASES: dict[str, str] = {
     "pitcairn": "PN",
     "arctique": "AQ",
     "arctic": "AQ",
+    # --- French exonyms, from run #5's unmapped list, 10 Sep 2026 ---
+    # France's picker uses French country names throughout, and the spine is
+    # built from Canada's English feed, so anything whose French name is not a
+    # near-spelling of the English one arrived unmapped. These are France's own
+    # labels, taken from the run report rather than guessed at.
+    "bielorussie": "BY",
+    "birmanie": "MM",
+    "cap vert": "CV",
+    "iles fidji": "FJ",
+    "fidji": "FJ",
+    "irak": "IQ",
+    "kirghizstan": "KG",
+    "libye": "LY",
+    "moldavie": "MD",
+    "republique des palaos": "PW",
+    "palaos": "PW",
+    "republique tcheque": "CZ",
+    "tchequie": "CZ",
+    "saint christophe et nieves": "KN",
+    "saint vincent et les grenadines": "VC",
+    "timor oriental": "TL",
+    "turquie": "TR",
+    "vatican": "VA",
+    "saint siege": "VA",
+    "etats federes de micronesie": "FM",
+    "micronesie": "FM",
 }
 
 # Some sources publish ONE page covering SEVERAL countries. The FCDO does this
@@ -145,6 +171,9 @@ MULTI_COUNTRY: dict[str, list[str]] = {
     "bonaire st eustatius saba": ["BQ"],
     "bonaire sint eustatius saba": ["BQ"],
     "antarctica british antarctic territory": ["AQ"],
+    # France publishes one page titled "Israel / Palestine" covering both, and
+    # its zone bands run across the whole of it.
+    "israel palestine": ["IL", "PS"],
 }
 
 # Names that are genuinely ambiguous and must NEVER be guessed. "Congo" is the
@@ -199,7 +228,7 @@ def normalise(name: str) -> str:
         return ""
     text = unicodedata.normalize("NFKD", name)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = text.lower().replace("&", " and ").replace("'", "").replace("â", "")
+    text = text.lower().replace("&", " and ").replace("'", "").replace("’", "")
     text = _PARENS.sub(" ", text)
     text = _NONWORD.sub(" ", text)
     text = _SPACES.sub(" ", text).strip()
@@ -267,7 +296,7 @@ class Spine:
         # source that names them cannot.
         for code, eng, fra in (
             ("CA", "Canada", "Canada"),
-            ("US", "United States", "\u00c9tats-Unis"),
+            ("US", "United States", "États-Unis"),
             ("GB", "United Kingdom", "Royaume-Uni"),
             ("FR", "France", "France"),
         ):

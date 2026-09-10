@@ -132,6 +132,13 @@ ALIASES: dict[str, list[str]] = {
     "MA": ["Casablanca"],
     "EG": ["Cairo"],
     "NG": ["Abuja"],
+    # Added 10 Sep 2026. Some sources locate a capital by naming the island or
+    # region it sits on rather than the city - France's Seychelles page bands
+    # "Mahe, Praslin, La Digue et Silhouette" as green without mentioning
+    # Victoria, which is on Mahe.
+    "SC": ["Mahe"],
+    "MU": ["Ile Maurice"],
+    "MV": ["Male Atoll"],
 }
 
 

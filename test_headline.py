@@ -148,6 +148,49 @@ def test_unknown_capital() -> None:
               str(capital_of(code)))
 
 
+def test_source_states_no_national_level() -> None:
+    print("Source publishes zones but no country-wide level (France)")
+    # Seychelles as France actually publishes it: the red zone is the high seas
+    # north of the archipelago, the inhabited islands are green. Our roll-up of
+    # those zones is 4, and feeding it back in as "the national level" is what
+    # published Seychelles as avoid-all-travel.
+    records = [
+        rec(4, region="Zone de haute mer au nord de l'archipel seychellois"),
+        rec(2, region="zone maritime des Iles interieures"),
+        rec(1, region="Les Iles interieures demeurent relativement sures"),
+    ]
+    h = resolve(records, "SC", national_level=4, national_stated=False)
+    check("does not publish the worst zone", h.level != 4, f"got {h.level} via {h.basis}")
+    check("uses the least severe band the source printed", h.level == 1,
+          f"got {h.level} via {h.basis}")
+    check("basis says the source stated no country-wide level",
+          "no country-wide level" in h.basis, h.basis)
+    check("note flags that the capital was not named",
+          any("not named in any zone" in n for n in h.notes), str(h.notes))
+    check("the caveat warns upward", h.caveat and "up to level 4" in h.caveat,
+          str(h.caveat))
+
+    # A source that DOES state a country-wide level keeps the old behaviour.
+    h2 = resolve(records, "SC", national_level=4, national_stated=True)
+    check("a stated national level is still honoured", h2.level == 4,
+          f"got {h2.level} via {h2.basis}")
+
+    print("A zone that names the capital still wins over the fallback")
+    named = [
+        rec(4, region="etats du Nord-Est"),
+        rec(2, region="Abuja et Lagos"),
+        rec(3, region="la Middle Belt"),
+    ]
+    h3 = resolve(named, "NG", national_level=4, national_stated=False)
+    check("the capital's own zone is used, not the least severe band",
+          h3.level == 2, f"got {h3.level} via {h3.basis}")
+
+    print("No zones at all and no stated national level")
+    h4 = resolve([rec(3)], "SC", national_level=3, national_stated=False)
+    check("falls back to the only level there is", h4.level == 3,
+          f"got {h4.level} via {h4.basis}")
+
+
 def test_apply_to_row() -> None:
     print("Applying to a reconciled row")
     row = {
@@ -191,6 +234,7 @@ if __name__ == "__main__":
     for fn in (test_capitals_table, test_capital_safer_than_country,
                test_capital_is_the_danger, test_exception_clause_wins,
                test_no_regional_detail, test_unknown_capital,
+               test_source_states_no_national_level,
                test_apply_to_row, test_no_undefined):
         fn()
     print()

@@ -26,13 +26,31 @@ HOW THE CAPITAL'S LEVEL IS DETERMINED, in order:
      "à l'exception de la ville de Kano" - the exception wins over the carve-out
      it sits inside.
   3. If the source publishes regional records but none names the capital, use
-     the source's national headline level. Most carve-outs are about the
-     periphery, so the capital sitting outside them means it carries the
-     national figure.
+     the source's national headline level - PROVIDED the source states one.
+     Most carve-outs are about the periphery, so the capital sitting outside
+     them means it carries the national figure.
   4. If the source publishes no regional detail at all, use the national level.
 
 Cases 3 and 4 are the common ones and are honest defaults, but they are
 recorded in `basis` so a wrong call is traceable rather than invisible.
+
+THE "PROVIDED THE SOURCE STATES ONE" CLAUSE, added 10 September 2026 after the
+fifth live run. Canada, the FCDO and State each issue a level for the country as
+a whole. France does not: it publishes zones and colours them, and the
+country-wide number is one WE computed by taking the worst zone. Feeding our own
+worst-zone figure back in as "the national level" undid the entire point of this
+module - the first live run to surface it had France rating Seychelles, Panama,
+Jamaica, Uganda and about fifty others at level 4, Seychelles because the red
+zone is the high seas north of the archipelago and the code could not tell that
+from a red zone over the capital.
+
+So when a source publishes named zones and states no country-wide level, and no
+zone names the capital, this uses the LEAST severe band that source published
+rather than the worst. That reads France's own model correctly: the bands listed
+are what France singled out, and a capital in none of them is not in the worst
+one. It can still understate - Nigeria prints red and orange and no green, so
+Abuja comes out orange - which is why the spread caveat is mandatory on these
+rows and says how much higher parts of the country are rated.
 """
 
 from __future__ import annotations
@@ -122,8 +140,15 @@ def resolve(
     records: list[dict],
     iso2: str,
     national_level: int | None,
+    national_stated: bool = True,
 ) -> Headline:
-    """Pick the published level for one source's view of one country."""
+    """Pick the published level for one source's view of one country.
+
+    `national_stated` says whether `national_level` is the source's own
+    country-wide figure or our roll-up of its zones. False means the source
+    never issued a country-wide level, so falling back to it would be quoting
+    ourselves - see the module docstring.
+    """
     capital = capital_of(iso2)
     regional = [r for r in records if r.get("region")]
     levels = [r.get("level") for r in records if isinstance(r.get("level"), int)]
@@ -164,7 +189,8 @@ def resolve(
             r.get("level") for r in regional
             if isinstance(r.get("level"), int) and r.get("level") not in excluded
         ]
-        if isinstance(national_level, int) and national_level not in excluded:
+        if (national_stated and isinstance(national_level, int)
+                and national_level not in excluded):
             level = national_level
             basis = ("capital excepted from a regional carve-out; "
                      "source's national level used instead")
@@ -182,12 +208,30 @@ def resolve(
         )
 
     if level is None and not excluded:
-        level = national_level
-        basis = (
-            "no regional record names the capital; source's national level used"
-            if regional
-            else "source publishes no regional detail; national level used"
-        )
+        zone_levels = [
+            r.get("level") for r in regional if isinstance(r.get("level"), int)
+        ]
+        if regional and not national_stated and zone_levels:
+            # The source named zones and stated no country-wide level. The
+            # capital is in none of the zones it named, so it is not in the
+            # worst one. Publish the least severe band the source printed and
+            # let the caveat carry the spread.
+            level = min(zone_levels)
+            basis = (
+                "source states no country-wide level and no named zone covers "
+                "the capital; least severe band the source published used"
+            )
+            extra_notes.append(
+                "capital not named in any zone - level inferred from the "
+                "source's least severe band"
+            )
+        else:
+            level = national_level
+            basis = (
+                "no regional record names the capital; source's national level used"
+                if regional
+                else "source publishes no regional detail; national level used"
+            )
 
     head = Headline(
         level=level,
@@ -241,7 +285,10 @@ def apply_to_row(row: dict) -> dict:
     for source, bucket in (row.get("sources") or {}).items():
         records = bucket.get("records") or []
         national = bucket.get("level")
-        head = resolve(records, iso2, national)
+        # Defaults to True so a bucket that predates this field, or a test that
+        # does not set it, behaves as before.
+        stated = bucket.get("national_stated", True)
+        head = resolve(records, iso2, national, national_stated=stated)
 
         bucket["country_high"] = national
         bucket["level"] = head.level

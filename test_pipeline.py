@@ -187,7 +187,7 @@ def test_reconciliation() -> None:
     check("Canada is in the spine despite not being in its own feed",
           resolve("Canada", spine).iso2 == "CA")
     for name, code in (("United States", "US"), ("France", "FR"),
-                       ("Royaume-Uni", "GB")):
+                       ("Royaume-Uni", "GB"), ("Etats-Unis", "US")):
         check(f"source country {name!r} resolves", resolve(name, spine).iso2 == code,
               f"got {resolve(name, spine).iso2}")
 
@@ -271,8 +271,6 @@ def test_record_shape() -> None:
           [v for v in d.values() if isinstance(v, str)])
 
 
-
-
 def test_live_run_gaps() -> None:
     """Names the first live run could not resolve, 10 Sep 2026."""
     print("Unmapped names from the live run")
@@ -289,6 +287,34 @@ def test_live_run_gaps() -> None:
               f"got {resolve(name, spine).iso2}")
 
 
+def test_french_country_names() -> None:
+    """Every name run #5 could not place, 10 Sep 2026.
+
+    France's picker is in French and the spine is built from Canada's English
+    feed, so a French exonym that is not a near-spelling of the English name
+    arrived unmapped and that country got no French column at all.
+    """
+    print("French country names from run #5")
+    spine = Spine.from_canada(CANADA_FIXTURE)
+    for name, code in [
+        ("Biélorussie", "BY"), ("Birmanie", "MM"), ("Cap-Vert", "CV"),
+        ("Iles Fidji", "FJ"), ("Irak", "IQ"), ("Kirghizstan", "KG"),
+        ("Libye", "LY"), ("Moldavie", "MD"), ("République des Palaos", "PW"),
+        ("République tchèque", "CZ"), ("Saint-Christophe-et-Niévès", "KN"),
+        ("Saint-Vincent-et-les-Grenadines", "VC"), ("Timor oriental", "TL"),
+        ("Turquie", "TR"), ("Vatican (Saint-Siège)", "VA"),
+        ("États fédérés de Micronésie", "FM"),
+    ]:
+        check(f"{name!r} -> {code}", resolve(name, spine).iso2 == code,
+              f"got {resolve(name, spine).iso2}")
+
+    got = [r.iso2 for r in resolve_all("Israël / Palestine", spine)]
+    check("France's combined page reaches both", got == ["IL", "PS"], str(got))
+
+    check("'Congo' is still refused rather than guessed",
+          resolve("Congo", spine).iso2 is None)
+
+
 def test_multi_country_pages() -> None:
     """One source page covering several countries must reach all of them."""
     print("Multi-country source pages")
@@ -301,7 +327,7 @@ def test_multi_country_pages() -> None:
           all(r.note and "covering" in r.note
               for r in resolve_all("Cook Islands, Tokelau and Niue", spine)))
 
-    got = [r.iso2 for r in resolve_all("St Martin and St Barthelemy", spine)]
+    got = [r.iso2 for r in resolve_all("St Martin and St Barthélemy", spine)]
     check("St Martin and St Barthelemy reach both", got == ["MF", "BL"], str(got))
 
     got = [r.iso2 for r in resolve_all("Nigeria", spine)]
@@ -328,16 +354,22 @@ def test_france_slugs() -> None:
     for label, expect in [
         ("Afghanistan", "afghanistan"),
         ("Afrique du Sud", "afrique-du-sud"),
+        ("Nigéria", "nigeria"),
+        ("Azerbaïdjan", "azerbaidjan"),
+        ("Côte d'Ivoire", "cote-d-ivoire"),
+        ("Vatican (Saint-Siège)", "vatican-saint-siege"),
+        ("États fédérés de Micronésie", "etats-federes-de-micronesie"),
         ("Burkina Faso", "burkina-faso"),
-        ("Vatican (Saint-Siege)", "vatican-saint-siege"),
     ]:
         check(f"{label!r} -> {expect}", slugify(label) == expect, slugify(label))
+    check("no leading or trailing hyphens", not slugify("  Îles Marshall  ").strip("-") != slugify("  Îles Marshall  "))
 
 
 if __name__ == "__main__":
     for fn in (test_normalise, test_canada_levels, test_us_parser,
                test_reconciliation, test_rollup, test_validation, test_record_shape,
-               test_live_run_gaps, test_multi_country_pages,
+               test_live_run_gaps, test_french_country_names,
+               test_multi_country_pages,
                test_ambiguous_never_guessed, test_france_slugs):
         fn()
     print()

@@ -52,6 +52,16 @@ SOURCES = {
 # Minimum destinations a source must return before we will publish its column.
 MIN_EXPECTED = {"ca": 150, "uk": 150, "us": 150, "fr": 100, "jp": 0}
 
+# Read from the collectors rather than restated here, so a source that changes
+# what it publishes changes this in one place.
+NATIONAL_LEVEL_STATED = {
+    "ca": canada.PUBLISHES_NATIONAL_LEVEL,
+    "uk": uk.PUBLISHES_NATIONAL_LEVEL,
+    "us": us.PUBLISHES_NATIONAL_LEVEL,
+    "fr": france.PUBLISHES_NATIONAL_LEVEL,
+    "jp": getattr(japan, "PUBLISHES_NATIONAL_LEVEL", True),
+}
+
 
 def _load_previous() -> dict:
     if LATEST.exists():
@@ -167,6 +177,11 @@ def reconcile(records: dict[str, list[Record]], spine: Spine) -> tuple[dict, lis
             # capital-city figure and attaches the caveat.
             levels = [r.get("level") for r in bucket["records"]]
             bucket["level"] = roll_up(levels)
+            # Whether that roll-up is the source's own country-wide figure or
+            # purely ours. France publishes zones and no national level, and
+            # treating our worst-zone roll-up as France's verdict is what put
+            # fifty countries on level 4 in run #5.
+            bucket["national_stated"] = NATIONAL_LEVEL_STATED.get(source, True)
             bucket["regional"] = any(r.get("region") for r in bucket["records"])
             bucket["url"] = bucket["records"][0].get("url")
             bucket["source_updated"] = bucket["records"][0].get("source_updated")
@@ -247,6 +262,13 @@ def main() -> int:
     # may start answering, and nobody would notice by hand.
     probe = us.probe_us_routes() if "us" in selected else None
 
+    # Only worth asking once a route is known to answer, and only while the
+    # US collector is broken - once the column is rebuilt this stops being a
+    # question and the flag can go.
+    shape = None
+    if probe and (probe.get("_summary") or {}).get("open") and not status.get("us", {}).get("ok"):
+        shape = us.probe_us_shape()
+
     snapshot = {
         "run_started": started,
         "run_finished": utcnow(),
@@ -254,6 +276,7 @@ def main() -> int:
         "source_status": status,
         "carry_forward": notices,
         "state_api_probe": probe,
+        "state_route_shape": shape,
         "japan_status": japan.STATUS,
         "validation": report,
         "countries": countries,
@@ -267,6 +290,7 @@ def main() -> int:
             spine_size=len(spine.by_iso),
             probe=probe,
             japan=japan.STATUS,
+            shape=shape,
         )
     )
 
