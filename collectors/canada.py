@@ -25,6 +25,10 @@ PAGE = "https://travel.gc.ca/destinations/{slug}"
 SOURCE = "ca"
 SOURCE_NAME = "Global Affairs Canada - Travel Advice and Advisories"
 
+# Canada states a level for the country as a whole (`advisory-state`) and then
+# lists regions that differ from it. The country-wide figure is Canada's own.
+PUBLISHES_NATIONAL_LEVEL = True
+
 # Cross-check strings. If the text and the number disagree we trust the number
 # and record the disagreement rather than silently picking one.
 TEXT_TO_LEVEL = {

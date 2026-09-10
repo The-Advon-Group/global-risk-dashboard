@@ -46,13 +46,31 @@ SLUG_CACHE = Path(__file__).resolve().parent.parent / "data" / "fr_slugs.json"
 SOURCE = "fr"
 SOURCE_NAME = "Ministere de l'Europe et des Affaires etrangeres - Conseils aux voyageurs"
 
+# France states no country-wide level. It publishes zones and colours them,
+# and the country's "level" is whatever we compute from those zones. Anything
+# downstream that treats our roll-up as a French national figure is wrong:
+# taking the worst zone gave Seychelles level 4 for a piracy zone at sea.
+PUBLISHES_NATIONAL_LEVEL = False
+
 # France's colour bands, highest first so the first match wins.
+#
+# The headings on a country page are one of a small set of wordings, sometimes
+# with the colour in brackets ("Zones formellement deconseillees (zone rouge)")
+# and sometimes without, so these match the phrase rather than the whole line.
 ZONE_BANDS = [
     (4, re.compile(r"zones?\s+formellement\s+d[ée]conseill", re.I), "zone rouge - formellement deconseille"),
-    (3, re.compile(r"d[ée]conseill\w*\s+sauf\s+raison\s+imp[ée]rative", re.I), "zone orange - deconseille sauf raison imperative"),
+    (3, re.compile(r"d[ée]conseill\w*\s+sauf\s+raisons?\s+imp[ée]rative", re.I), "zone orange - deconseille sauf raison imperative"),
     (2, re.compile(r"vigilance\s+renforc[ée]e", re.I), "zone jaune - vigilance renforcee"),
     (1, re.compile(r"vigilance\s+normale", re.I), "zone verte - vigilance normale"),
 ]
+
+# The block that carries the bands. Everything outside it is narrative and must
+# not be scanned for band phrases: the Seychelles page says "formellement
+# deconseillee" again halfway down a paragraph about piracy, and the Nigeria
+# page repeats "deconseilles sauf raison imperative" inside the prose under its
+# own heading. Reading the whole page rated both countries 4.
+ZONES_HEADING = re.compile(r"zones?\s+de\s+vigilance", re.I)
+HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")
 
 UPDATED = re.compile(r"[Dd]erni[èe]re\s+actualisation\s+le\s+([0-9]{2}/[0-9]{2}/[0-9]{4})")
 STILL_VALID = re.compile(r"information\s+toujours\s+valable\s+[àa]\s+la\s+date\s+du\s+jour", re.I)
@@ -74,7 +92,7 @@ def slugify(name: str) -> str:
     """
     text = unicodedata.normalize("NFD", name or "")
     text = "".join(c for c in text if not unicodedata.combining(c))
-    text = text.lower().replace("'", "-").replace("\u2019", "-")
+    text = text.lower().replace("'", "-").replace("’", "-")
     text = re.sub(r"[^a-z0-9]+", "-", text)
     return text.strip("-")
 
@@ -89,7 +107,7 @@ def discover_slugs(save: bool = False) -> dict[str, str]:
     request per country, relying on the server to answer with a redirect to the
     real page. That did not work: Drupal only runs a form's submit handler when
     the submit button's own name and value are posted alongside the fields, and
-    ours were not. Without op=Valider the server simply rebuilt the form and
+    ours were not. Without `op=Valider` the server simply rebuilt the form and
     returned no redirect, so nothing resolved.
 
     Rather than fix the form dance, this drops it. The slugs turn out to be
@@ -158,13 +176,10 @@ def _parse_country(name: str, slug: str) -> list[Record]:
     updated = UPDATED.search(text)
     still_valid = bool(STILL_VALID.search(text))
 
-    found: list[tuple[int, str]] = []
-    for level, pattern, label in ZONE_BANDS:
-        if pattern.search(text):
-            found.append((level, label))
+    zones = _read_zones(soup)
 
     records: list[Record] = []
-    if not found:
+    if not zones:
         rec = Record(
             source=SOURCE,
             source_name=SOURCE_NAME,
@@ -178,7 +193,8 @@ def _parse_country(name: str, slug: str) -> list[Record]:
         records.append(rec)
         return records
 
-    for level, label in found:
+    single = len(zones) == 1
+    for level, label, where in zones:
         rec = Record(
             source=SOURCE,
             source_name=SOURCE_NAME,
@@ -187,13 +203,93 @@ def _parse_country(name: str, slug: str) -> list[Record]:
             level=level,
             level_label=label,
             level_basis="France colour band stated in the 'Zones de vigilance' section",
-            region=None if len(found) == 1 else label,
+            # The zone's own wording, not the band's name. This is the whole
+            # point of the 10 Sep rewrite: France says WHERE each band applies,
+            # and throwing that away left the capital-city rule with nothing to
+            # match on, so every French row fell back to the worst zone in the
+            # country. Seychelles read as level 4 because of a piracy zone on
+            # the high seas while the inhabited islands are green.
+            region=None if single else (where or label),
             source_updated=updated.group(1) if updated else None,
         )
         if still_valid:
             rec.notes.append("source states information still valid as of today")
+        if not single and not where:
+            rec.notes.append("band heading present but no zone text under it")
         records.append(rec)
     return records
+
+
+def _read_zones(soup) -> list[tuple[int, str, str]]:
+    """Every band in the 'Zones de vigilance' block, with the area it covers.
+
+    Returns (level, band label, zone wording). The zone wording is the text
+    France prints under the band's heading - the states, regions, cities or sea
+    areas the band applies to, including its exception clauses, which is what
+    `headline.resolve` needs to place a capital.
+
+    Scoped to the block on purpose. Both band phrases turn up again in the
+    narrative further down a page, and scanning the whole document rated
+    countries by whichever phrase happened to appear rather than by what France
+    actually classified.
+    """
+    anchor = soup.find(
+        lambda tag: tag.name in HEADING_TAGS and ZONES_HEADING.search(tag.get_text(" "))
+    )
+    if anchor is None:
+        return []
+
+    # The band headings sit in a different container from the "Zones de
+    # vigilance" heading itself, so this walks document order rather than
+    # siblings - but it stops at the first heading of the same rank or higher
+    # that is not a band, which is the next section of the page. Without that
+    # stop the walk runs to the foot of the document and picks up band phrases
+    # out of the narrative, which is the bug being fixed.
+    anchor_rank = HEADING_TAGS.index(anchor.name)
+    zones: list[tuple[int, str, str]] = []
+    for node in anchor.find_all_next():
+        if node.name not in HEADING_TAGS:
+            continue
+        heading = re.sub(r"\s+", " ", node.get_text(" ")).strip()
+        band = _band_of(heading)
+        if band is None:
+            if HEADING_TAGS.index(node.name) <= anchor_rank:
+                break
+            continue
+        level, label = band
+        zones.append((level, label, _text_under(node)))
+
+    # Same band twice on one page - France sometimes splits a colour across two
+    # headings. Keep the first and append the rest of the wording to it.
+    merged: dict[int, tuple[int, str, list[str]]] = {}
+    for level, label, where in zones:
+        if level in merged:
+            merged[level][2].append(where)
+        else:
+            merged[level] = (level, label, [where])
+    return [
+        (level, label, " ".join(p for p in parts if p).strip())
+        for level, label, parts in sorted(merged.values(), key=lambda z: -z[0])
+    ]
+
+
+def _band_of(heading: str) -> tuple[int, str] | None:
+    for level, pattern, label in ZONE_BANDS:
+        if pattern.search(heading):
+            return level, label
+    return None
+
+
+def _text_under(heading) -> str:
+    """The paragraphs and lists between one band heading and the next."""
+    parts: list[str] = []
+    for sibling in heading.find_next_siblings():
+        if sibling.name in HEADING_TAGS:
+            break
+        chunk = re.sub(r"\s+", " ", sibling.get_text(" ")).strip()
+        if chunk:
+            parts.append(chunk)
+    return " ".join(parts).strip()
 
 
 def collect(slugs: dict[str, str] | None = None, max_workers: int = 6) -> list[Record]:

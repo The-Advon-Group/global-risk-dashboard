@@ -41,6 +41,9 @@ ADVISORY_API = "https://cadataapi.state.gov/api/TravelAdvisories"
 SOURCE = "us"
 SOURCE_NAME = "U.S. Department of State, Bureau of Consular Affairs - Travel Advisories"
 
+# State issues one level per destination.
+PUBLISHES_NATIONAL_LEVEL = True
+
 LEVEL_CLASS = re.compile(r"level-title-(\d)")
 INDICATOR_LETTER = re.compile(r"\(([A-Z])\)\s*$")
 
@@ -210,6 +213,70 @@ def _describe(name: str, body: str) -> str:
 # Kept so older callers and the pipeline keep working.
 def probe_cadataapi() -> dict:
     return probe_us_routes()
+
+
+LEVEL_IN_TEXT = re.compile(r"Level\s*([1-4])\b", re.I)
+
+
+def probe_us_shape() -> dict:
+    """Ask the two open routes whether a LEVEL can be read out of them.
+
+    Run #5 established that `CountryTravelInformation` and the RSS change feed
+    both answer while the HTML list page and the open-data XML do not. That
+    settles reachability and nothing else: a route that returns six megabytes of
+    narrative is only useful for the advisory column if a level is in there
+    somewhere.
+
+    So this reports the SHAPE - which fields exist, how many entries, whether a
+    "Level N" string appears and in which field - rather than the content. The
+    point is to decide how to rebuild the US column without hauling six
+    megabytes of prose through anybody's eyes first.
+    """
+    from xml.etree import ElementTree as ET
+
+    out: dict[str, dict] = {}
+
+    try:
+        xml = get(NARRATIVE_API, timeout=120).text
+        root = ET.fromstring(xml)
+        entries = list(root)
+        fields: list[str] = []
+        if entries:
+            fields = [
+                child.tag.rsplit("}", 1)[-1] for child in entries[0]
+            ]
+        with_level = 0
+        level_fields: set[str] = set()
+        for node in entries[:40]:
+            for child in node:
+                if child.text and LEVEL_IN_TEXT.search(child.text[:400]):
+                    level_fields.add(child.tag.rsplit("}", 1)[-1])
+            if any(child.text and LEVEL_IN_TEXT.search(child.text[:400]) for child in node):
+                with_level += 1
+        out["country_info_api"] = {
+            "entries": len(entries),
+            "fields": sorted(set(fields)),
+            "level_string_in_first_40": with_level,
+            "fields_carrying_a_level": sorted(level_fields),
+        }
+    except (CollectorError, ET.ParseError) as exc:
+        out["country_info_api"] = {"error": str(exc)[:200]}
+
+    try:
+        feed = get(CANDIDATE_ROUTES["rss_change_feed"], timeout=60).text
+        root = ET.fromstring(feed)
+        items = root.findall(".//item")
+        titles = [(it.findtext("title") or "").strip() for it in items]
+        levelled = [t for t in titles if LEVEL_IN_TEXT.search(t)]
+        out["rss_change_feed"] = {
+            "items": len(items),
+            "titles_with_a_level": len(levelled),
+            "sample_title": (levelled or titles or [""])[0][:120],
+        }
+    except (CollectorError, ET.ParseError) as exc:
+        out["rss_change_feed"] = {"error": str(exc)[:200]}
+
+    return out
 
 
 def fetch_country_narratives() -> dict[str, dict[str, str]]:

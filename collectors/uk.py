@@ -25,6 +25,11 @@ INDEX = "https://www.gov.uk/api/content/foreign-travel-advice"
 SOURCE = "uk"
 SOURCE_NAME = "UK Foreign, Commonwealth & Development Office - travel advice"
 
+# The FCDO says whether advice covers the whole country or named parts of it,
+# and a parts-only advisory already emits its own residual record, so the
+# country-wide figure here is the FCDO's, not ours.
+PUBLISHES_NATIONAL_LEVEL = True
+
 # FCDO's published alert vocabulary -> our shared 1-4 scale.
 # "to_parts" keeps the same severity: per the agreed rule, a country rolls up to
 # the highest severity applying to any part of it, and the region detail is
